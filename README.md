@@ -80,8 +80,9 @@ Double-click any row to find it on the map and select that net in KiCad.
 
 ## Using it
 
-1. Open the board in the PCB editor and click **CapScan**. It reads the board and lists its
-   signal nets (planes and supplies are left out) under *Nets to scan*. Tick **Scan all
+1. Open the board in the PCB editor and click **CapScan**. It reads the board and shows it
+   at once, in 3D and 2D: the stackup, every plane, and the signal routing, with the nets
+   you pick highlighted. It also lists the board's signal nets (planes and supplies are left out) under *Nets to scan*. Tick **Scan all
    signal nets**, or filter the list and tick the nets you want (*Select shown* ticks every
    net the filter shows), then click **Scan board**. The nets you pick are remembered for
    that board, and next time it scans them straight away. The scan refills the zones first

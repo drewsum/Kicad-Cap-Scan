@@ -25,6 +25,12 @@ from capscan.model.board import BoardSnapshot, Track
 from capscan.progress import NULL, ProgressReporter
 
 STEP_MM = 0.05
+#: A trace that ends on a pad or via of its own net leaves the layer there, through a hole
+#: in the plane (the pad's clearance). A hole at that end of the trace is not a void if it
+#: reaches no further than the pad's own size plus this much.
+END_CLEARANCE_MM = 1.0
+#: A trace end this close to a pad or via's copper edge ends on it.
+END_TOL_MM = 0.05
 #: A stripline whose other plane covers this share of a disc 3h round the crossing still
 #: has a return path there: half the severity.
 SOLID_OTHER_SHARE = 0.9
@@ -118,6 +124,39 @@ def _severity(refs: References, layer: int, broken: int, xy) -> float:
     return 1.0
 
 
+def _pad_radius(pad) -> float:
+    """How far the pad's copper reaches from its center (its drill, without shapes)."""
+    r = 0.0
+    for polys in pad.shapes.values():
+        for poly in polys:
+            for x, y in poly.outline:
+                r = max(r, math.hypot(x - pad.position[0], y - pad.position[1]))
+    return r or max(pad.drill_mm) / 2.0
+
+
+def terminals(snap: BoardSnapshot, nets) -> Dict[str, List[Tuple[float, float, float]]]:
+    """Where each net's traces can leave their layer: its through-hole pads and vias, as
+    (x, y, radius)."""
+    out: Dict[str, List[Tuple[float, float, float]]] = {}
+    for p in snap.pads:
+        if p.net in nets and p.pad_type == "pth":
+            out.setdefault(p.net, []).append((*p.position, _pad_radius(p)))
+    for v in snap.vias:
+        if v.net in nets:
+            out.setdefault(v.net, []).append((*v.position, max(v.diameter_mm, v.drill_mm) / 2))
+    return out
+
+
+def _end_allowance(xy, terms) -> float:
+    """How long a plane hole at a trace end at ``xy`` may be and still be the clearance of
+    the pad or via the trace ends on; 0 when it ends on neither."""
+    best = 0.0
+    for x, y, r in terms:
+        if math.hypot(xy[0] - x, xy[1] - y) <= r + END_TOL_MM:
+            best = max(best, r + END_CLEARANCE_MM)
+    return best
+
+
 def find_crossings(snap: BoardSnapshot, refs: References, settings: ScanSettings,
                    progress: ProgressReporter = NULL) -> List[Crossing]:
     by_net_layer: Dict[Tuple[str, int], List[Track]] = {}
@@ -125,6 +164,7 @@ def find_crossings(snap: BoardSnapshot, refs: References, settings: ScanSettings
     for t in snap.tracks:
         if t.net in signals and refs.refs(t.layer):
             by_net_layer.setdefault((t.net, t.layer), []).append(t)
+    terms = terminals(snap, signals)
 
     out: List[Crossing] = []
     keys = sorted(by_net_layer)
@@ -133,15 +173,22 @@ def find_crossings(snap: BoardSnapshot, refs: References, settings: ScanSettings
             progress.fraction(k / max(1, len(keys)))
             progress.check_cancel()
         for line in routed_lines(by_net_layer[(net, layer)]):
+            ends = (_end_allowance(line.coords[0], terms.get(net, ())),
+                    _end_allowance(line.coords[-1], terms.get(net, ())))
             for ref_layer, h in refs.refs(layer):
-                out.extend(_line_crossings(line, net, layer, ref_layer, h, refs, settings))
+                out.extend(_line_crossings(line, net, layer, ref_layer, h, refs, settings,
+                                           ends, terms.get(net, ())))
     for i, c in enumerate(out, 1):
         c.id = f"X{i}"
     return out
 
 
 def _line_crossings(line: LineString, net: str, layer: int, ref_layer: int, h: float,
-                    refs: References, settings: ScanSettings) -> List[Crossing]:
+                    refs: References, settings: ScanSettings,
+                    ends: Tuple[float, float] = (0.0, 0.0), terms=()) -> List[Crossing]:
+    """``ends``: how long a hole at the line's start and end may be and still be the
+    clearance round the pad or via it ends on (:func:`_end_allowance`). ``terms``: the
+    net's through-hole pads and vias; a hole centered on one is that pad's clearance."""
     plane = refs.planes[ref_layer]
     n = max(2, int(math.ceil(line.length / STEP_MM)) + 1)
     s = np.linspace(0.0, line.length, n)
@@ -180,6 +227,11 @@ def _line_crossings(line: LineString, net: str, layer: int, ref_layer: int, h: f
         gap = s1 - s0
         a, b = name(prev) if prev is not None else "", name(nxt) if nxt is not None else ""
         mid = 0.5 * (s0 + s1)
+        at_start, at_end = i == 0, i == len(runs) - 1
+        if (at_start and gap <= ends[0]) or (at_end and gap <= ends[1]):
+            continue                    # the clearance round the pad it leaves the layer by
+        if gap <= 2.0 * _end_allowance(line.interpolate(mid).coords[0], terms):
+            continue                    # the clearance round its own pin, routed through
         if a and b and a != b and gap <= settings.split_gap_max_mm:
             add(SPLIT, a, b, mid, gap)
         elif gap >= settings.void_ignore_mm:

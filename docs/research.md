@@ -38,6 +38,7 @@ The usual cure, short of rerouting, is a path for the return current at the brea
 | Decoupling test | Within 3 mm of an IC pin on either net | Return current through such a capacitor flows through the IC's supply pin and bond wires |
 | Split vs void | A gap up to 2 mm between two nets is a split; any longer stretch over no plane is a void | The capacitor's vias must reach both planes |
 | Ignored holes | Holes in one net's plane shorter than 1 mm under the trace | Via antipads and thermal-relief spokes: a small detour |
+| Pad clearances | A hole round a through-hole pad or via of the trace's own net, where the trace ends or runs through it, reaching up to 1 mm past the pad | The signal leaves the layer through that pad; the hole is its clearance, not a break in the return path |
 | Plane net | A zone fill of 2 % of the board (or 25 mm²), or a supply / ground name with any fill | So that pours count but small copper islands do not |
 | Reference layer | Plane nets cover 20 % of it | So that an outer layer with a little ground pour stays a signal layer |
 

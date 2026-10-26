@@ -17,6 +17,32 @@ from capscan.model.board import BoardSnapshot
 from capscan.progress import NULL, ProgressReporter
 
 
+def preview_result(snap: BoardSnapshot, settings: Optional[ScanSettings] = None,
+                   highlight=(), progress: ProgressReporter = NULL) -> ScanResult:
+    """The board as read, with nothing scanned: its planes, reference layers and every
+    signal net, for showing before a scan. The ``highlight`` nets are drawn hot."""
+    from dataclasses import replace
+    settings = settings or ScanSettings()
+    warnings = list(snap.assumed)
+    with progress.timed("Finding planes and signals"):
+        refs = build_references(snap, replace(settings, scan_all_nets=True), warnings)
+        progress.info(f"{len(refs.plane_nets)} plane nets, {len(refs.candidate_nets)} signal "
+                      "nets")
+    return ScanResult(
+        board_name=snap.board_name, settings=settings,
+        layer_names={c.id: c.name for c in snap.stackup.copper},
+        plane_nets=refs.plane_nets, signal_nets=refs.candidate_nets,
+        references={k: list(v) for k, v in refs.by_layer.items()},
+        track_heat=highlight_tracks(snap, highlight), warnings=warnings,
+        kicad_version=snap.kicad_version, candidate_nets=refs.candidate_nets, preview=True)
+
+
+def highlight_tracks(snap: BoardSnapshot, nets):
+    """Track heat that marks the tracks of ``nets``, for a preview."""
+    nets = set(nets)
+    return [(i, 1.0) for i, t in enumerate(snap.tracks) if t.net in nets]
+
+
 def run_scan(snap: BoardSnapshot, settings: Optional[ScanSettings] = None,
              progress: ProgressReporter = NULL) -> ScanResult:
     settings = settings or ScanSettings()

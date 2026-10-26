@@ -215,6 +215,7 @@ class MainWindow(QMainWindow):
         self.result: Optional[ScanResult] = None
         self._task: Optional[Task] = None
         self._data: Optional[MapData] = None
+        self._preview: Optional[ScanResult] = None     # the board as read, before a scan
         self.setWindowTitle(f"CapScan {__version__}: stitching capacitor advisor")
         self.resize(1500, 950)
         self._qsettings = QSettings("CapScan", "CapScan")
@@ -240,7 +241,12 @@ class MainWindow(QMainWindow):
             self._show_result(snapshot, result)
         elif board is not None or snapshot is not None:
             self.load_board(autoscan=autorun)
-        self.settings_panel.nets.changed.connect(self._update_actions)
+        from qtpy.QtCore import QTimer
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(400)
+        self._preview_timer.timeout.connect(self._show_preview)
+        self.settings_panel.nets.changed.connect(self._picks_changed)
         self._update_actions()
 
     # ------------------------------------------------------------------ layout
@@ -410,7 +416,7 @@ class MainWindow(QMainWindow):
         board, kicad, cached = self.board, self.kicad, self.snapshot
 
         def job(progress):
-            from capscan.analysis.references import signal_net_candidates
+            from capscan.analysis.scan import preview_result
             snap = cached
             if board is not None:
                 from capscan.kicad.extract import extract_board
@@ -419,17 +425,15 @@ class MainWindow(QMainWindow):
                     snap.kicad_version = str(kicad.get_version()) if kicad else ""
                 except Exception:  # noqa: BLE001
                     pass
-            with progress.timed("Listing signal nets"):
-                nets = signal_net_candidates(snap, settings)
-                progress.info(f"{len(nets)} signal nets")
-            return snap, nets
+            return snap, preview_result(snap, settings, progress=progress)
 
         def done(out):
-            snap, nets = out
-            self.snapshot = snap
-            self.board_label.setText(f"<b>{snap.board_name}</b><br>{len(nets)} signal nets. "
-                                     "Pick the nets to scan on the right.")
-            self.settings_panel.nets.set_nets(nets, self._saved_nets())
+            snap, preview = out
+            self.snapshot, self._preview = snap, preview
+            self.settings_panel.nets.blockSignals(True)
+            self.settings_panel.nets.set_nets(preview.candidate_nets, self._saved_nets())
+            self.settings_panel.nets.blockSignals(False)
+            self._show_preview()
             if autoscan and self.settings_panel.nets.ready():
                 # The run that read the board is still winding down.
                 from qtpy.QtCore import QTimer
@@ -531,6 +535,27 @@ class MainWindow(QMainWindow):
             log.warning("Could not save results to %s: %s", path, e)
 
     # ------------------------------------------------------------------ showing
+    def _show_preview(self):
+        """The board as read, before a scan, with the picked nets highlighted."""
+        if self._preview is None or self.result is not None:
+            return
+        from dataclasses import replace
+
+        from capscan.analysis.scan import highlight_tracks
+        p = self._preview
+        picker = self.settings_panel.nets
+        nets = p.candidate_nets if picker.scan_all() else picker.selected()
+        p = replace(p, track_heat=highlight_tracks(self.snapshot, nets))
+        self._data = MapData(self.snapshot, p)
+        self._show_board(self.snapshot, p)
+        self.map.set_data(self._data)
+        self._show_3d()
+
+    def _picks_changed(self):
+        self._update_actions()
+        if self.result is None and self._preview is not None:
+            self._preview_timer.start()     # redrawn once the clicking stops
+
     def _show_result(self, snap: BoardSnapshot, r: ScanResult):
         self.snapshot, self.result = snap, r
         self._data = MapData(snap, r)
@@ -558,8 +583,9 @@ class MainWindow(QMainWindow):
             log.exception("3D view failed")
             self._log(f"3D view failed: {e}", logging.WARNING)
             return
-        for h in self.result.heat:
-            cb = QCheckBox(self.result.layer_name(h.layer))
+        shown = self._data.result
+        for h in shown.heat:
+            cb = QCheckBox(shown.layer_name(h.layer))
             cb.setChecked(True)
             cb.toggled.connect(lambda on, l=h.layer: self.viewer.set_layer_visible(l, on))
             self.layer_bar.insertWidget(1 + len(self._layer_boxes), cb)
@@ -571,7 +597,8 @@ class MainWindow(QMainWindow):
             f"{snap.stackup.board_thickness_mm:.2f} mm"
             + (f"<br>KiCad {snap.kicad_version}" if snap.kicad_version else "")
             + f"<br>Plane nets: {', '.join(r.plane_nets) or 'none'}"
-            + f"<br>{len(r.signal_nets)} signal nets scanned")
+            + (f"<br>{len(r.candidate_nets)} signal nets on the board" if r.preview
+               else f"<br>{len(r.signal_nets)} signal nets scanned"))
         from capscan.model.stackup import stack_order
         rows = []
         planes = {l for rl in r.references.values() for l, _ in rl}
@@ -585,6 +612,17 @@ class MainWindow(QMainWindow):
                 rows.append((e.material or "dielectric", f"{e.thickness_mm * 1000:.0f} µm",
                              f"εr {e.epsilon_r:g}" if e.epsilon_r else "", ""))
         fill_table(self.stackup_table, ["Layer", "Thickness", "Role", "Returns on"], rows)
+        if r.preview:
+            picker = self.settings_panel.nets
+            picked = (f"all {len(r.candidate_nets)}" if picker.scan_all()
+                      else str(len(picker.selected())))
+            lines = ["<b>Not scanned yet.</b>",
+                     f"The board as read: planes, and the signal routing. The {picked} nets "
+                     "picked to scan are highlighted.",
+                     "Pick nets on the right, then <b>Scan board</b>."]
+            lines += [f"<span style='color:#ffc060'>{w}</span>" for w in r.warnings]
+            self.summary_label.setText("<br>".join(lines))
+            return
         c = r.counts()
         lines = [f"<b>{c['caps']}</b> stitching caps to add",
                  f"<b>{c['stitch_vias']}</b> return vias to add",

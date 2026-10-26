@@ -357,3 +357,35 @@ def test_candidates_ignore_the_selection():
     from capscan.analysis.references import signal_net_candidates
     s = ScanSettings(selected_nets=["D0"], ignore_nets=["SPI*"])
     assert signal_net_candidates(_everything_board(), s) == ["D0", "D1", "D2", "SIG"]
+
+
+def test_clearance_round_a_through_hole_pad_at_a_trace_end_is_not_a_void():
+    from capscan.model.board import Pad, Poly
+    # A 1.7 mm through-hole pad at (30, 12), with a 1.2 mm-radius hole in both planes.
+    hole = [(30 + 1.2 * math.cos(a / 16 * math.pi * 2), 12 + 1.2 * math.sin(a / 16 * math.pi * 2))
+            for a in range(16)]
+    zones = [zone("GND", IN1, rect(0.2, 0.2, 39.8, 29.8), holes=[hole]),
+             zone("GND", IN2, rect(0.2, 0.2, 39.8, 29.8), holes=[hole], ident="z2")]
+    pad = Pad(id="J1-1", net="SIG", footprint="J1", number="1", position=(30.0, 12.0),
+              pad_type="pth", drill_mm=(1.0, 1.0),
+              shapes={B_CU: [Poly(outline=rect(29.15, 11.15, 30.85, 12.85))]})
+    r = run_scan(board(tracks=[track("SIG", B_CU, (5, 12), (30, 12))], pads=[pad], zones=zones))
+    assert r.crossings == []
+    # The same hole in the middle of a trace is a void.
+    r = run_scan(board(tracks=[track("SIG", B_CU, (5, 12), (38, 12))], zones=zones))
+    (c,) = r.voids()
+    assert c.position == pytest.approx((30, 12), abs=0.1)
+
+
+def test_clearance_round_a_pin_the_trace_runs_through_is_not_a_void():
+    from capscan.model.board import Pad, Poly
+    hole = [(20 + 1.2 * math.cos(a / 16 * math.pi * 2), 12 + 1.2 * math.sin(a / 16 * math.pi * 2))
+            for a in range(16)]
+    zones = [zone("GND", IN1, rect(0.2, 0.2, 39.8, 29.8), holes=[hole]),
+             zone("GND", IN2, rect(0.2, 0.2, 39.8, 29.8), holes=[hole], ident="z2")]
+    pin = Pad(id="J1-1", net="SIG", footprint="J1", number="1", position=(20.0, 12.0),
+              pad_type="pth", drill_mm=(1.0, 1.0),
+              shapes={B_CU: [Poly(outline=rect(19.15, 11.15, 20.85, 12.85))]})
+    tracks = [track("SIG", B_CU, (5, 12), (20, 12)), track("SIG", B_CU, (20, 12), (35, 12))]
+    r = run_scan(board(tracks=tracks, pads=[pin], zones=zones))
+    assert r.crossings == []

@@ -153,6 +153,8 @@ class ScanResult:
     warnings: List[str] = field(default_factory=list)
     kicad_version: str = ""
     candidate_nets: List[str] = field(default_factory=list)   # every signal net on the board
+    #: The board as read, before any scan: planes and routing only, nothing found yet.
+    preview: bool = False
     created: str = ""
     seconds: float = 0.0
 
@@ -204,7 +206,7 @@ class ScanResult:
                 "heat": [h.to_dict() for h in self.heat],
                 "track_heat": [list(t) for t in self.track_heat],
                 "warnings": self.warnings, "kicad_version": self.kicad_version,
-                "candidate_nets": self.candidate_nets,
+                "candidate_nets": self.candidate_nets, "preview": self.preview,
                 "created": self.created, "seconds": self.seconds}
 
     @classmethod
@@ -241,7 +243,7 @@ class ScanResult:
             heat=[HeatLayer.from_dict(h) for h in d["heat"]],
             track_heat=[tuple(t) for t in d.get("track_heat", [])],
             warnings=list(d.get("warnings", [])), kicad_version=d.get("kicad_version", ""),
-            candidate_nets=list(d.get("candidate_nets", [])),
+            candidate_nets=list(d.get("candidate_nets", [])), preview=d.get("preview", False),
             created=d.get("created", ""), seconds=d.get("seconds", 0.0))
 
     def save(self, path) -> Path:

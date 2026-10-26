@@ -154,3 +154,22 @@ def test_net_filter_patterns():
     assert matches_filter("USB_D+", "usb") and matches_filter("DDR_DQ3", "DDR*")
     assert matches_filter("CLK1", "clk?") and not matches_filter("CLK10", "clk?")
     assert matches_filter("anything", "")
+
+
+def test_board_is_shown_before_a_scan(app, make_window):
+    w = make_window()
+    assert w.result is None and w._data is not None and w._data.result.preview
+    assert w.map._data is w._data and w.stackup_table.rowCount() == 7
+    assert "Not scanned yet" in w.summary_label.text()
+    assert not w.act_html.isEnabled()                       # nothing to report yet
+    assert w._data.track_heat == [0.0, 0.0, 0.0]            # nothing picked
+
+
+def test_picked_nets_light_up_in_the_preview(app, make_window):
+    w = make_window()
+    w.settings_panel.nets.set_selected(["D1"])
+    _wait(app, lambda: w._data.track_heat == [0.0, 1.0, 0.0])
+    w.settings_panel.nets.set_scan_all(True)
+    _wait(app, lambda: w._data.track_heat == [1.0, 1.0, 1.0])
+    _scan(app, w)
+    assert not w._data.result.preview and "Not scanned yet" not in w.summary_label.text()
