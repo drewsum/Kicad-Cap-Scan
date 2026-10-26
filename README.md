@@ -28,9 +28,10 @@ counted as a stitching capacitor.
 
 ## What you get
 
-* **3D Heat Map**: each reference plane with the density of split crossings rendered on it.
-  Hotter means more routing crossing splits in a small area. Signals are colored by heat
-  and the new capacitors are drawn on the board.
+* **3D Heat Map**: each reference plane with the density of return-path breaks rendered on
+  it: splits, voids, vias that need a stitching cap, and vias still missing a return via.
+  Hotter means more breaks in a small area. Tick boxes pick which kinds of break add heat.
+  Signals are colored by heat and the new capacitors are drawn on the board.
 * **2D Placement**: one reference layer at a time. Plane nets are filled, crossings are
   marked, and the capacitors and return vias are labeled. Click one to find it in the tables.
 * **Tables**:
@@ -85,8 +86,9 @@ Double-click any row to find it on the map and select that net in KiCad.
    you pick highlighted. It also lists the board's signal nets (planes and supplies are left out) under *Nets to scan*. Tick **Scan all
    signal nets**, or filter the list and tick the nets you want (*Select shown* ticks every
    net the filter shows), then click **Scan board**. The nets you pick are remembered for
-   that board, and next time it scans them straight away. The scan refills the zones first
-   by default, because the zone fills decide where the planes are.
+   that board and ticked again next time; nothing is scanned until you click **Scan board**.
+   The scan reads the zone fills as they are, and the fills decide where the planes are:
+   tick *Refill zones before scanning* (or press B in KiCad) if they may be stale.
 2. Read the summary on the left. The **Stitching Caps** tab is the list of parts to add.
 3. Click **Place markers** to see the spots in the PCB editor, then **Export PDF** or
    **Export HTML** for the report.
@@ -101,7 +103,9 @@ the board as `<board>.capscan.json.gz`.
 ## How it works
 
 1. **Planes and signals.** A net is a plane net if its zone fills cover 2 % of the board on
-   some layer, or if it is named like a supply or ground and has any fill. Every other routed
+   some layer, or if it is named like a supply or ground and has any fill. A net is also a
+   supply, whatever its name, when it is poured on two or more layers or has an array of four
+   or more vias (a regulator output the schematic left as `Net-(U2-OUT)`). Every other routed
    net is a signal. Differential pairs (`_P`/`_N`, `+`/`-`) count as one return path.
 2. **Reference layers.** A copper layer is a reference layer if plane nets cover 20 % of it.
    Each signal layer returns its current on the nearest reference layer above it and the

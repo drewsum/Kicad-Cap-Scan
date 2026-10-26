@@ -5,6 +5,9 @@ A return current flows on the nearest plane above and the nearest plane below it
 (one for a microstrip on an outer layer, two for a stripline). A plane layer is any
 copper layer that zone fills of plane nets cover a good share of; several plane nets on
 one layer are a split plane.
+
+A supply is known by its name (+3V3, GND, VDD_IO), or, when the schematic left it a name
+like "Net-(U2-OUT)", by its copper: zone fills on several layers, or an array of vias.
 """
 
 from __future__ import annotations
@@ -12,8 +15,9 @@ from __future__ import annotations
 import fnmatch
 import re
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
+import numpy as np
 import shapely
 import shapely.prepared
 from shapely.geometry import Point as SPoint, Polygon
@@ -111,6 +115,7 @@ class References:
     board: BaseGeometry                 # the board outline
     board_area: float
     plane_nets: List[str]
+    copper_power: List[str]             # supplies known by their copper, not their name
     signal_nets: List[str]              # the signals scanned
     candidate_nets: List[str]           # every signal net on the board
     planes: Dict[int, PlaneLayer]       # reference layers only
@@ -144,6 +149,45 @@ def zone_regions(snap: BoardSnapshot) -> Dict[int, Dict[str, BaseGeometry]]:
         if not g.is_empty:
             out.setdefault(lid, {})[net] = g
     return out
+
+
+def _largest_array(points, pitch: float) -> int:
+    """The most of ``points`` joined into one group by steps of at most ``pitch``."""
+    pts = np.asarray(points, dtype=float)
+    near = np.hypot(*(pts[:, None, :] - pts[None, :, :]).transpose(2, 0, 1)) <= pitch
+    group = list(range(len(pts)))
+
+    def root(i):
+        while group[i] != i:
+            group[i] = group[group[i]]
+            i = group[i]
+        return i
+    for i, j in zip(*np.nonzero(np.triu(near, 1))):
+        group[root(i)] = root(j)
+    roots = [root(i) for i in range(len(pts))]
+    return max(roots.count(r) for r in set(roots))
+
+
+def power_by_copper(snap: BoardSnapshot, regions, settings: ScanSettings,
+                    skip: Set[str] = frozenset()) -> Set[str]:
+    """Nets that are supplies by their copper, whatever their name: zone fills on
+    :attr:`~ScanSettings.power_min_zone_layers` layers, or an array of
+    :attr:`~ScanSettings.power_via_array` vias. ``skip``: nets already known as supplies."""
+    out: Set[str] = set()
+    if settings.power_min_zone_layers > 0:
+        layers: Dict[str, int] = {}
+        for layer in regions.values():
+            for net in layer:
+                layers[net] = layers.get(net, 0) + 1
+        out |= {n for n, k in layers.items() if k >= settings.power_min_zone_layers}
+    if settings.power_via_array > 0:
+        vias: Dict[str, list] = {}
+        for v in snap.vias:
+            if v.net and v.net not in skip and v.net not in out:
+                vias.setdefault(v.net, []).append(v.position)
+        out |= {n for n, pts in vias.items() if len(pts) >= settings.power_via_array
+                and _largest_array(pts, settings.power_via_pitch_mm) >= settings.power_via_array}
+    return out - skip
 
 
 def board_geometry(snap: BoardSnapshot, regions) -> BaseGeometry:
@@ -197,15 +241,20 @@ def build_references(snap: BoardSnapshot, settings: ScanSettings,
     track_nets = {t.net for t in snap.tracks if t.net}
     zone_nets = {net for layer in regions.values() for net in layer}
     names = [n.name for n in snap.nets if n.name] or sorted(track_nets | zone_nets)
+    named = {n for n in set(names) | track_nets | zone_nets if looks_like_power(n)}
+    by_copper = power_by_copper(snap, regions, settings, skip=named)
+
+    def supply(net):
+        return net in named or net in by_copper
     plane_nets = set()
     for net in zone_nets:
         biggest = max((layer[net].area for layer in regions.values() if net in layer),
                       default=0.0)
-        if biggest >= min_area or looks_like_power(net):
+        if biggest >= min_area or supply(net):
             plane_nets.add(net)
     plane_nets |= {n for n in names if matches(n, settings.extra_plane_nets)}
     candidates = sorted(n for n in track_nets
-                        if n not in plane_nets and not looks_like_power(n)
+                        if n not in plane_nets and not supply(n)
                         and not n.lower().startswith("unconnected-")
                         and not matches(n, settings.ignore_nets))
     if settings.scan_all_nets:
@@ -256,6 +305,7 @@ def build_references(snap: BoardSnapshot, settings: ScanSettings,
         by_layer[lid] = refs
 
     return References(board=board, board_area=board_area, plane_nets=sorted(plane_nets),
+                      copper_power=sorted(by_copper),
                       signal_nets=signal_nets, candidate_nets=candidates,
                       planes=planes, all_planes=all_planes,
                       by_layer=by_layer, z_mid=z_mid, diff_base=diff_pairs(signal_nets))

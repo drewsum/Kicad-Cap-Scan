@@ -49,6 +49,35 @@ def test_diff_pairs():
     assert "CLK" not in pairs and "RXP" not in pairs
 
 
+def _supply_board(**kw):
+    return board(tracks=[track("Net-(U2-OUT)", F_CU, (5.0, 5.0), (15.0, 5.0)),
+                         track("SPI_CLK", F_CU, (5.0, 12.0), (15.0, 12.0))], **kw)
+
+
+def test_net_poured_on_several_layers_is_a_supply():
+    zones = [zone("GND", IN1, rect(0.2, 0.2, 39.8, 29.8)),
+             zone("Net-(U2-OUT)", F_CU, rect(4, 4, 6, 6), ident="o1"),
+             zone("Net-(U2-OUT)", B_CU, rect(4, 4, 6, 6), ident="o2")]
+    refs = build_references(_supply_board(zones=zones), ScanSettings(scan_all_nets=True))
+    assert refs.copper_power == ["Net-(U2-OUT)"] and "Net-(U2-OUT)" in refs.plane_nets
+    assert refs.signal_nets == ["SPI_CLK"]
+    off = ScanSettings(scan_all_nets=True, power_min_zone_layers=0)
+    assert build_references(_supply_board(zones=zones), off).copper_power == []
+
+
+def test_net_with_a_via_array_is_a_supply():
+    array = [via("Net-(U2-OUT)", (6.0 + 0.5 * i, 5.5), f"a{i}") for i in range(4)]
+    refs = build_references(_supply_board(vias=array), ScanSettings(scan_all_nets=True))
+    assert refs.copper_power == ["Net-(U2-OUT)"] and refs.signal_nets == ["SPI_CLK"]
+    # The same vias spread out are a signal changing layer here and there.
+    spread = [via("Net-(U2-OUT)", (6.0 + 3.0 * i, 5.5), f"s{i}") for i in range(4)]
+    refs = build_references(_supply_board(vias=spread), ScanSettings(scan_all_nets=True))
+    assert refs.copper_power == [] and "Net-(U2-OUT)" in refs.signal_nets
+    three = array[:3]
+    refs = build_references(_supply_board(vias=three), ScanSettings(scan_all_nets=True))
+    assert refs.copper_power == []
+
+
 # ------------------------------------------------------------------ crossings
 
 def test_microstrip_over_split_needs_caps():
@@ -256,11 +285,46 @@ def test_voltage_rating():
 
 def test_heat_is_hottest_at_the_bus():
     r = run_scan(board(tracks=crossing_bus() + [track("SIG", B_CU, (2.0, 12.0), (12.0, 12.0))]))
-    (h,) = r.heat
+    (h,) = r.heat_map()
     assert h.layer == IN2 and h.values.max() == pytest.approx(1.0)
     from capscan.analysis.heatmap import sample
     assert sample(h, (20, 6)) > sample(h, (7, 12)) > sample(h, (35, 25))
     assert r.track_heat
+    assert {(p.kind, p.layer) for p in r.heat} == {(SPLIT, IN2), (VOID, IN2)}
+
+
+def test_heat_of_each_kind_shows_on_its_own():
+    r = run_scan(board(tracks=crossing_bus() + [track("SIG", B_CU, (2.0, 12.0), (12.0, 12.0))]))
+    from capscan.analysis.heatmap import sample
+    (void,) = r.heat_map([VOID])                # scaled by its own peak: the void alone
+    assert void.values.max() == pytest.approx(1.0)
+    assert sample(void, (7, 12)) > 0.9 and sample(void, (20, 6)) < 0.05
+    (both,) = r.heat_map()
+    assert sample(both, (7, 12)) < sample(void, (7, 12))
+    assert r.heat_map([]) == [] and r.heat_map([VIA_CAP]) == []
+    assert r.heat_counts() == {SPLIT: 3, VOID: 1, VIA_CAP: 0, VIA_STITCH: 0}
+
+
+def test_missing_return_vias_add_heat():
+    r = run_scan(_via_board(zones=_gnd_gnd_zones()))
+    assert {(p.kind, p.layer) for p in r.heat} == {(VIA_STITCH, IN1), (VIA_STITCH, IN2)}
+    assert r.heat_counts()[VIA_STITCH] == 1
+    from capscan.analysis.heatmap import sample
+    (h, _) = r.heat_map([VIA_STITCH])
+    assert sample(h, (10.0, 25.0)) == pytest.approx(1.0, abs=0.05)
+    # One already there adds none.
+    r = run_scan(_via_board(extra=[via("GND", (10.0, 26.0), "gv")], zones=_gnd_gnd_zones()))
+    assert r.heat == [] and r.heat_counts()[VIA_STITCH] == 0
+
+
+def test_heat_saved_before_kinds_were_kept_apart_still_shows():
+    r = run_scan(board(tracks=crossing_bus()))
+    d = r.to_dict()
+    for h in d["heat"]:
+        del h["kind"]
+    back = ScanResult.from_dict(d)
+    assert [h.kind for h in back.heat] == [""]
+    assert len(back.heat_map([VOID])) == 1      # shown whatever is ticked
 
 
 def test_result_round_trips(tmp_path):
@@ -304,7 +368,7 @@ def test_a_check_turned_off_adds_nothing(off, caps, splits, voids, vias):
     assert any(w.startswith("Not checked (turned off)") for w in r.warnings)
     if off == "check_splits":                # no heat left where the bus crosses the split
         from capscan.analysis.heatmap import sample
-        (h,) = [h for h in r.heat if h.layer == IN2]
+        (h,) = [h for h in r.heat_map() if h.layer == IN2]
         assert sample(h, (20, 6)) < 0.05
 
 

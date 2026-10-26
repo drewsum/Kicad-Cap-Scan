@@ -1,23 +1,64 @@
 """The 2D Placement tab: the map of :mod:`capscan.report.maps` on a Qt canvas, one
-reference layer at a time, with matplotlib's pan and zoom."""
+reference layer at a time, with matplotlib's pan and zoom. :class:`HeatToggles` picks the
+kinds of break whose heat is shown, here and on the 3D tab."""
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Dict, Iterable, List, Optional
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
 from qtpy.QtCore import Signal
 from qtpy.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from capscan.analysis.results import HEAT_KINDS, HEAT_LABELS
 from capscan.report.maps import DARK, MapData, draw_map, legend_handles
 
 #: A click this near (in mm) a capacitor or crossing picks it.
 PICK_MM = 1.2
 
 
+class HeatToggles(QWidget):
+    """A tick box per kind of break: the heat map adds up those ticked."""
+    changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        bar = QHBoxLayout(self)
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.addWidget(QLabel("Heat:"))
+        self.boxes: Dict[str, QCheckBox] = {}
+        for kind in HEAT_KINDS:
+            cb = QCheckBox(HEAT_LABELS[kind])
+            cb.setChecked(True)
+            cb.toggled.connect(lambda _: self.changed.emit())
+            bar.addWidget(cb)
+            self.boxes[kind] = cb
+
+    def kinds(self) -> List[str]:
+        return [k for k, cb in self.boxes.items() if cb.isChecked()]
+
+    def set_kinds(self, kinds: Iterable[str], emit: bool = False):
+        kinds = set(kinds)
+        if kinds == set(self.kinds()):
+            return
+        for k, cb in self.boxes.items():
+            cb.blockSignals(True)
+            cb.setChecked(k in kinds)
+            cb.blockSignals(False)
+        if emit:
+            self.changed.emit()
+
+    def set_counts(self, counts: Optional[Dict[str, int]]):
+        """Show how many breaks of each kind add heat (None: before a scan)."""
+        for k, cb in self.boxes.items():
+            n = (counts or {}).get(k)
+            cb.setText(HEAT_LABELS[k] + (f" ({n})" if n is not None else ""))
+
+
 class BoardMap(QWidget):
     picked = Signal(str)            # the id of the capacitor or crossing clicked
+    heat_changed = Signal()         # other kinds of heat shown
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -30,9 +71,8 @@ class BoardMap(QWidget):
         self.layer = QComboBox()
         self.layer.currentIndexChanged.connect(lambda _: self.redraw())
         bar.addWidget(self.layer)
-        self.heat = QCheckBox("Heat")
-        self.heat.setChecked(True)
-        self.heat.toggled.connect(lambda _: self.redraw())
+        self.heat = HeatToggles()
+        self.heat.changed.connect(self._heat_changed)
         bar.addWidget(self.heat)
         self.labels = QCheckBox("Labels")
         self.labels.setChecked(True)
@@ -50,6 +90,10 @@ class BoardMap(QWidget):
 
     def set_data(self, data: Optional[MapData]):
         self._data = data
+        if data is not None:
+            data.set_heat_kinds(self.heat.kinds())
+        self.heat.set_counts(None if data is None or data.result.preview
+                             else data.result.heat_counts())
         self.layer.blockSignals(True)
         self.layer.clear()
         if data is not None:
@@ -59,6 +103,12 @@ class BoardMap(QWidget):
                 self.layer.addItem("All reference layers", None)
         self.layer.blockSignals(False)
         self.redraw()
+
+    def _heat_changed(self):
+        if self._data is not None:
+            self._data.set_heat_kinds(self.heat.kinds())
+        self.redraw()
+        self.heat_changed.emit()
 
     def show_item(self, ident: str, ref_layers=()):
         """Highlight ``ident`` and switch to a layer it is on."""
@@ -82,7 +132,7 @@ class BoardMap(QWidget):
             self.canvas.draw_idle()
             return
         layer = self.layer.currentData()
-        draw_map(ax, self._data, layer, DARK, show_heat=self.heat.isChecked(),
+        draw_map(ax, self._data, layer, DARK,
                  highlight=self._highlight, labels=self.labels.isChecked())
         layers = self._data.reference_layers() if layer is None else [layer]
         leg = ax.legend(handles=legend_handles(DARK, self._data, layers), fontsize=7,

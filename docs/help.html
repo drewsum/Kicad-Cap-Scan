@@ -26,8 +26,9 @@ code { background: #eee; padding: 1px 4px; border-radius: 3px; }
       its signal nets under <i>Nets to scan</i>. Tick <b>Scan all signal nets</b>, or
       type in the filter box (<code>USB</code>, <code>DDR*</code>, <code>CLK?</code>), tick the
       nets you want (<i>Select shown</i> ticks all the filter shows), and click <b>Scan
-      board</b>. The scan refills the zones first, unless you untick that. Your picks are
-      remembered for the board, and the next time it scans them straight away.</li>
+      board</b>. It scans the zone fills as they are: tick <i>Refill zones before scanning</i>
+      if they may be stale. Your picks are remembered for the board and ticked again next
+      time; nothing is scanned until you click <b>Scan board</b>.</li>
   <li>Read the <b>Stitching Caps</b> tab. Each row is a part to add: its value, voltage
       rating, the two nets it bridges, where it goes (X / Y in KiCad's board coordinates, the
       side, the rotation), and the signals it returns current for.</li>
@@ -37,10 +38,12 @@ code { background: #eee; padding: 1px 4px; border-radius: 3px; }
 
 <h2>The tabs</h2>
 <table>
-  <tr><th>3D Heat Map</th><td>Each reference plane, with the density of split crossings
-    rendered on it. Plane edges are outlined in their net's color. Signals near splits are
+  <tr><th>3D Heat Map</th><td>Each reference plane, with the density of return-path breaks
+    rendered on it. Plane edges are outlined in their net's color. Signals near breaks are
     colored by heat, and the new capacitors are cyan blocks. Drag to turn, scroll to zoom,
-    and use the check boxes to hide layers.</td></tr>
+    and use the check boxes to hide layers. The Heat tick boxes, here and on the 2D tab,
+    pick which breaks add heat: splits, voids, vias that need a cap, and vias still missing
+    a return via. The number by each is how many there are.</td></tr>
   <tr><th>2D Placement</th><td>One reference layer at a time:
     <ul>
       <li>planes filled by net, and the signals that return on that layer;</li>
@@ -74,7 +77,8 @@ part) in KiCad.</p>
     another net (needs a capacitor) or another layer of the same net (needs a return via).</td></tr>
   <tr><th>Severity</th><td>1 when the broken plane is the signal's only reference; 0.5 for
     a stripline whose other plane is solid there.</td></tr>
-  <tr><th>Heat</th><td>How many breaks are close together, from 0 to 1 across the board.</td></tr>
+  <tr><th>Heat</th><td>How many breaks of the kinds ticked are close together, from 0 to 1
+    across the board.</td></tr>
 </table>
 
 <h2>Settings</h2>

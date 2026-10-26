@@ -11,7 +11,7 @@ import gzip
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -34,6 +34,10 @@ NEW_VIA = "new via"
 EXISTING_VIA = "existing via"
 UNFIXABLE = "reroute"
 OTHER_PLANE = "other plane"     # a void on one side of a stripline; the other plane is solid
+
+#: The breaks that add heat, each on its own map, and what the window calls them.
+HEAT_KINDS = (SPLIT, VOID, VIA_CAP, VIA_STITCH)
+HEAT_LABELS = {SPLIT: "Splits", VOID: "Voids", VIA_CAP: "Via caps", VIA_STITCH: "Return vias"}
 
 
 @dataclass
@@ -122,17 +126,53 @@ class HeatLayer:
     layer: int
     origin: Point                   # x, y of grid cell [0, 0]
     step_mm: float
-    values: np.ndarray              # (ny, nx), 0..1 over the whole board
+    values: np.ndarray              # (ny, nx): unscaled for one kind, 0..1 once combined
+    #: The break that made it (one of :data:`HEAT_KINDS`); "" for a combined map, or one
+    #: saved before the kinds were kept apart.
+    kind: str = ""
 
     def to_dict(self):
         return {"layer": self.layer, "origin": list(self.origin), "step_mm": self.step_mm,
-                "shape": list(self.values.shape),
+                "shape": list(self.values.shape), "kind": self.kind,
                 "values": np.round(self.values, 4).ravel().tolist()}
 
     @classmethod
     def from_dict(cls, d):
         return cls(layer=d["layer"], origin=tuple(d["origin"]), step_mm=d["step_mm"],
-                   values=np.asarray(d["values"], dtype=float).reshape(d["shape"]))
+                   values=np.asarray(d["values"], dtype=float).reshape(d["shape"]),
+                   kind=d.get("kind", ""))
+
+
+def heat_kind(x) -> str:
+    """The kind of heat a crossing or via transition adds, or "" for none: every split and
+    void (but a void the other plane of a stripline covers), every via onto another net's
+    plane, and the vias onto another plane of the same net that still need a return via."""
+    if isinstance(x, Crossing):
+        return x.kind if x.status != OTHER_PLANE else ""
+    if x.kind == VIA_CAP or (x.kind == VIA_STITCH and x.status == NEW_VIA):
+        return x.kind
+    return ""
+
+
+def combine_heat(parts: Sequence[HeatLayer], kinds: Optional[Iterable[str]] = None
+                 ) -> List[HeatLayer]:
+    """One map per layer: the ``kinds`` of heat (None: all) added up, scaled by the hottest
+    spot on the board so layers compare directly. Every part shares one grid."""
+    kinds = set(HEAT_KINDS if kinds is None else kinds) | {""}
+    sums: Dict[int, HeatLayer] = {}
+    for h in parts:
+        if h.kind not in kinds:
+            continue
+        if h.layer in sums:
+            sums[h.layer].values = sums[h.layer].values + h.values
+        else:
+            sums[h.layer] = HeatLayer(h.layer, h.origin, h.step_mm, np.array(h.values, float))
+    peak = max((h.values.max() for h in sums.values()), default=0.0)
+    if peak <= 0:
+        return []
+    for h in sums.values():
+        h.values = h.values / peak
+    return [sums[l] for l in sorted(sums)]
 
 
 @dataclass
@@ -148,6 +188,8 @@ class ScanResult:
     caps: List[StitchCap] = field(default_factory=list)
     stitch_vias: List[StitchVia] = field(default_factory=list)
     existing: List[ExistingCap] = field(default_factory=list)
+    #: The heat of each kind of break on each reference layer, unscaled: :meth:`heat_map`
+    #: adds them up.
     heat: List[HeatLayer] = field(default_factory=list)
     track_heat: List[Tuple[int, float]] = field(default_factory=list)   # (track index, 0..1)
     warnings: List[str] = field(default_factory=list)
@@ -168,6 +210,18 @@ class ScanResult:
     def voids(self) -> List[Crossing]:
         """Voids no plane returns the current over (not those a solid second plane covers)."""
         return [c for c in self.crossings if c.kind == VOID and c.status != OTHER_PLANE]
+
+    def heat_map(self, kinds: Optional[Iterable[str]] = None) -> List[HeatLayer]:
+        """The heat of the ``kinds`` of break (None: all) as one map per layer, 0..1."""
+        return combine_heat(self.heat, kinds)
+
+    def heat_counts(self) -> Dict[str, int]:
+        """How many breaks of each kind add heat."""
+        out = {k: 0 for k in HEAT_KINDS}
+        for x in list(self.crossings) + list(self.transitions):
+            if heat_kind(x):
+                out[heat_kind(x)] += 1
+        return out
 
     def via_changes(self) -> List[Transition]:
         return [t for t in self.transitions if t.kind != VIA_OK]

@@ -10,7 +10,9 @@ from capscan.analysis.existing_caps import find_existing_caps
 from capscan.analysis.heatmap import heat_maps, track_heat
 from capscan.analysis.placement import credit_existing, mark_unfixable, needs_of, place_caps
 from capscan.analysis.references import build_references
-from capscan.analysis.results import SPLIT, VIA_CAP, VIA_STITCH, VOID, ScanResult
+from capscan.analysis.results import (
+    SPLIT, VIA_CAP, VIA_STITCH, VOID, ScanResult, combine_heat,
+)
 from capscan.analysis.rules import ScanSettings
 from capscan.analysis.transitions import find_transitions
 from capscan.model.board import BoardSnapshot
@@ -54,6 +56,9 @@ def run_scan(snap: BoardSnapshot, settings: Optional[ScanSettings] = None,
         names = {c.id: c.name for c in snap.stackup.copper}
         progress.info(f"{len(refs.plane_nets)} plane nets, {len(refs.signal_nets)} of "
                       f"{len(refs.candidate_nets)} signal nets to scan")
+        if refs.copper_power:
+            progress.info("Taken as supplies by their copper (zone fills on several layers, "
+                          "or a via array): " + ", ".join(refs.copper_power))
         for lid, plane in refs.all_planes.items():
             role = "reference" if lid in refs.planes else "partial pour"
             progress.info(f"  {names.get(lid, lid)}: {', '.join(sorted(plane.regions))} "
@@ -107,7 +112,8 @@ def run_scan(snap: BoardSnapshot, settings: Optional[ScanSettings] = None,
     with progress.timed("Heat map"):
         bounds = refs.board.bounds if not refs.board.is_empty else None
         heat = heat_maps(bounds, crossings, transitions, settings)
-        theat = track_heat(snap.tracks, heat, refs.by_layer, refs.signal_nets)
+        theat = track_heat(snap.tracks, combine_heat(heat), refs.by_layer,
+                           refs.signal_nets)
 
     return ScanResult(
         board_name=snap.board_name, settings=settings, layer_names=names,

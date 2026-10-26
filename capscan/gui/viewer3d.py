@@ -66,7 +66,9 @@ class Viewer3D(QWidget):
         self._actors = {}
         self._scene = None
 
-    def show_scene(self, scene: Scene):
+    def show_scene(self, scene: Scene, keep_camera: bool = False):
+        """Draw ``scene``; ``keep_camera`` keeps the view as it is (the same board redrawn)."""
+        camera = self.plotter.camera_position if keep_camera and self._scene else None
         self.plotter.clear()
         self._actors = {}
         self._scene = scene
@@ -122,8 +124,11 @@ class Viewer3D(QWidget):
             self._add("vias", pv.PolyData(pts), color=_VIA_COLOR, point_size=10,
                       render_points_as_spheres=True)
 
-        p.view_isometric()
-        p.reset_camera()
+        if camera is not None:
+            p.camera_position = camera
+        else:
+            p.view_isometric()
+            p.reset_camera()
         self._apply_visibility()
         p.render()
 
@@ -136,6 +141,9 @@ class Viewer3D(QWidget):
     def set_layer_visible(self, layer: int, visible: bool):
         (self._hidden_layers.discard if visible else self._hidden_layers.add)(layer)
         self._apply_visibility()
+
+    def layer_visible(self, layer: int) -> bool:
+        return layer not in self._hidden_layers
 
     def _apply_visibility(self):
         for group, actors in self._actors.items():

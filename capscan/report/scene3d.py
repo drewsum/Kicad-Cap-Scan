@@ -59,7 +59,7 @@ def build_scene(data: MapData, zscale: float = 6.0) -> Scene:
                 outline.append(np.column_stack([a[:, 0], -a[:, 1]]))
 
     sheets = []
-    for h in r.heat:
+    for h in data.heat:
         ny, nx = h.values.shape
         x = h.origin[0] + h.step_mm * np.arange(nx)
         y = -(h.origin[1] + h.step_mm * np.arange(ny))
