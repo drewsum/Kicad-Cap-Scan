@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("kipy")
 
 from boards import B_CU, board, track  # noqa: E402
-from capscan.analysis.scan import run_scan  # noqa: E402
+from boards import scan as run_scan  # noqa: E402
 from capscan.kicad import markers  # noqa: E402
 
 

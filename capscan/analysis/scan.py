@@ -26,7 +26,8 @@ def run_scan(snap: BoardSnapshot, settings: Optional[ScanSettings] = None,
     with progress.timed("Finding planes and signals"):
         refs = build_references(snap, settings, warnings)
         names = {c.id: c.name for c in snap.stackup.copper}
-        progress.info(f"{len(refs.plane_nets)} plane nets, {len(refs.signal_nets)} signals")
+        progress.info(f"{len(refs.plane_nets)} plane nets, {len(refs.signal_nets)} of "
+                      f"{len(refs.candidate_nets)} signal nets to scan")
         for lid, plane in refs.all_planes.items():
             role = "reference" if lid in refs.planes else "partial pour"
             progress.info(f"  {names.get(lid, lid)}: {', '.join(sorted(plane.regions))} "
@@ -88,5 +89,6 @@ def run_scan(snap: BoardSnapshot, settings: Optional[ScanSettings] = None,
         references={k: list(v) for k, v in refs.by_layer.items()},
         crossings=crossings, transitions=transitions, caps=caps, stitch_vias=stitch_vias,
         existing=existing, heat=heat, track_heat=theat, warnings=warnings,
-        kicad_version=snap.kicad_version, created=time.strftime("%Y-%m-%d %H:%M"),
+        kicad_version=snap.kicad_version, candidate_nets=refs.candidate_nets,
+        created=time.strftime("%Y-%m-%d %H:%M"),
         seconds=round(time.perf_counter() - t0, 2))

@@ -27,6 +27,7 @@ The usual cure, short of rerouting, is a path for the return current at the brea
 
 | Setting | Default | Source / reasoning |
 |---|---|---|
+| Nets scanned | Those picked in the window, or all signal nets (off by default) | Scanning everything on a large board gives a long list; pick the interfaces that matter |
 | Edge rate | 100 ps (knee about 3.5 GHz) | CapScan assumes every signal is fast digital, so as to need no setup about signals |
 | Cap distance from a split crossing | 2.5 mm (100 mil) | Riazi's split-plane simulations (PCD&M): a 0.1 µF capacitor within 100 mil of the crossing works; at 500 mil it is ineffective |
 | Cap distance from a via | 1.27 mm (50 mil) | Guidance is "as close to the transition via as possible", tighter for faster edges; 50 mil is a tight figure that can still be reached |

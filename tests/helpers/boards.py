@@ -91,3 +91,14 @@ def ic(ref, pins, pos=(30.0, 25.0)) -> tuple:
             for i, (net, xy) in enumerate(pins, 1)]
     return Footprint(id=ref, reference=ref, value="MCU", position=pos, side="top",
                      pad_ids=[p.id for p in pads]), pads
+
+
+def scan(snap: BoardSnapshot, settings=None, all_nets: bool = True, nets=()):
+    """``run_scan`` of every signal net (the window's default is to scan only picked nets),
+    or of ``nets`` alone when ``all_nets`` is False."""
+    from dataclasses import replace
+
+    from capscan.analysis.rules import ScanSettings
+    from capscan.analysis.scan import run_scan
+    s = replace(settings or ScanSettings(), scan_all_nets=all_nets, selected_nets=list(nets))
+    return run_scan(snap, s)

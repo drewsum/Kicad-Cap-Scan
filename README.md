@@ -7,9 +7,10 @@ KiCad's IPC API, finds every signal whose return current meets a break in its re
 plane, and tells you how many stitching capacitors are needed, where (X / Y and board side),
 what value and voltage rating, and which two plane nets each one bridges.
 
-It needs no setup. Every net that is not a plane is taken to be a fast digital signal
-(100 ps edges), and every default leans towards more stitching rather than less: a basic
-utility that keeps every signal's return path next to it.
+The only setup is choosing which nets to scan. Tick **Scan all signal nets**, or pick nets
+from the list (a filter box finds `USB`, `DDR*` and so on). Every net scanned is taken to be
+a fast digital signal (100 ps edges), and every default leans towards more stitching rather
+than less: a basic utility that keeps every signal's return path next to it.
 
 ## What it finds
 
@@ -79,8 +80,12 @@ Double-click any row to find it on the map and select that net in KiCad.
 
 ## Using it
 
-1. Open the board in the PCB editor and click **CapScan**. The scan starts at once. By
-   default it refills the zones first, because the zone fills decide where the planes are.
+1. Open the board in the PCB editor and click **CapScan**. It reads the board and lists its
+   signal nets (planes and supplies are left out) under *Nets to scan*. Tick **Scan all
+   signal nets**, or filter the list and tick the nets you want (*Select shown* ticks every
+   net the filter shows), then click **Scan board**. The nets you pick are remembered for
+   that board, and next time it scans them straight away. The scan refills the zones first
+   by default, because the zone fills decide where the planes are.
 2. Read the summary on the left. The **Stitching Caps** tab is the list of parts to add.
 3. Click **Place markers** to see the spots in the PCB editor, then **Export PDF** or
    **Export HTML** for the report.

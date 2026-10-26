@@ -20,6 +20,7 @@ def main(argv=None) -> int:
     ap.add_argument("--dump", metavar="PATH", help="extract from KiCad, save snapshot, exit")
     ap.add_argument("--scan", metavar="PATH", help="scan a saved snapshot and print a summary")
     ap.add_argument("--html", metavar="PATH", help="with --scan: also write the HTML report")
+    ap.add_argument("--nets", metavar="A,B", help="with --scan: only these nets (default: all)")
     ap.add_argument("--refill", action="store_true", help="refill zones before extracting")
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args(argv)
@@ -43,8 +44,11 @@ def main(argv=None) -> int:
         from capscan.analysis.scan import run_scan
         from capscan.model.snapshot_io import load
         from capscan.progress import ProgressReporter
+        from capscan.analysis.rules import ScanSettings
         snap = load(args.scan)
-        r = run_scan(snap, progress=ProgressReporter())
+        picked = [n.strip() for n in (args.nets or "").split(",") if n.strip()]
+        settings = ScanSettings(scan_all_nets=not picked, selected_nets=picked)
+        r = run_scan(snap, settings, progress=ProgressReporter())
         print(r.counts())
         for c in r.caps:
             print(f"{c.id}: {c.value} {c.voltage_v:g}V {c.package} {c.net_a}/{c.net_b} at "

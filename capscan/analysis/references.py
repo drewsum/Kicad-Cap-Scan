@@ -111,7 +111,8 @@ class References:
     board: BaseGeometry                 # the board outline
     board_area: float
     plane_nets: List[str]
-    signal_nets: List[str]
+    signal_nets: List[str]              # the signals scanned
+    candidate_nets: List[str]           # every signal net on the board
     planes: Dict[int, PlaneLayer]       # reference layers only
     all_planes: Dict[int, PlaneLayer]   # every layer with plane copper
     by_layer: Dict[int, List[Tuple[int, float]]]   # signal layer -> [(ref layer, h)]
@@ -179,6 +180,12 @@ def diff_pairs(nets: Iterable[str]) -> Dict[str, str]:
     return out
 
 
+def signal_net_candidates(snap: BoardSnapshot, settings: ScanSettings) -> List[str]:
+    """Every net the scan would treat as a signal, for picking nets to scan."""
+    from dataclasses import replace
+    return build_references(snap, replace(settings, scan_all_nets=True)).candidate_nets
+
+
 def build_references(snap: BoardSnapshot, settings: ScanSettings,
                      warnings: Optional[List[str]] = None) -> References:
     warnings = warnings if warnings is not None else []
@@ -197,10 +204,26 @@ def build_references(snap: BoardSnapshot, settings: ScanSettings,
         if biggest >= min_area or looks_like_power(net):
             plane_nets.add(net)
     plane_nets |= {n for n in names if matches(n, settings.extra_plane_nets)}
-    signal_nets = sorted(n for n in track_nets
-                         if n not in plane_nets and not looks_like_power(n)
-                         and not n.lower().startswith("unconnected-")
-                         and not matches(n, settings.ignore_nets))
+    candidates = sorted(n for n in track_nets
+                        if n not in plane_nets and not looks_like_power(n)
+                        and not n.lower().startswith("unconnected-")
+                        and not matches(n, settings.ignore_nets))
+    if settings.scan_all_nets:
+        signal_nets = candidates
+    else:
+        picked = set(settings.selected_nets)
+        signal_nets = [n for n in candidates if n in picked]
+        if not picked:
+            warnings.append("No nets were picked to scan: tick 'Scan all signal nets' or pick "
+                            "some in the net list.")
+        else:
+            missing = sorted(picked - set(candidates))
+            if missing:
+                warnings.append(f"{len(missing)} picked net(s) are not signal nets on this "
+                                f"board and were skipped: {', '.join(missing[:8])}"
+                                + (" …" if len(missing) > 8 else ""))
+            warnings.append(f"Only {len(signal_nets)} of {len(candidates)} signal nets were "
+                            "scanned (picked by hand).")
 
     all_planes: Dict[int, PlaneLayer] = {}
     for lid, layer in regions.items():
@@ -233,5 +256,6 @@ def build_references(snap: BoardSnapshot, settings: ScanSettings,
         by_layer[lid] = refs
 
     return References(board=board, board_area=board_area, plane_nets=sorted(plane_nets),
-                      signal_nets=signal_nets, planes=planes, all_planes=all_planes,
+                      signal_nets=signal_nets, candidate_nets=candidates,
+                      planes=planes, all_planes=all_planes,
                       by_layer=by_layer, z_mid=z_mid, diff_base=diff_pairs(signal_nets))

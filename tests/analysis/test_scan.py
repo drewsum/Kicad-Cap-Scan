@@ -11,7 +11,7 @@ from capscan.analysis.results import (
     VOID, ScanResult,
 )
 from capscan.analysis.rules import ScanSettings
-from capscan.analysis.scan import run_scan
+from boards import scan as run_scan
 from capscan.analysis.values import net_voltage, voltage_rating
 
 
@@ -23,7 +23,7 @@ def crossing_bus(ys=(5.0, 6.0, 7.0), layer=B_CU, prefix="D"):
 
 def test_planes_signals_and_references():
     snap = board(tracks=crossing_bus())
-    refs = build_references(snap, ScanSettings())
+    refs = build_references(snap, ScanSettings(scan_all_nets=True))
     assert refs.plane_nets == ["+1V8", "+3V3", "GND"]
     assert refs.signal_nets == ["D0", "D1", "D2"]
     assert set(refs.planes) == {IN1, IN2}
@@ -324,3 +324,36 @@ def test_all_checks_off():
 def test_checks_survive_saving():
     s = ScanSettings(check_via_caps=False)
     assert ScanSettings.from_dict(s.to_dict()).check_via_caps is False
+
+
+# ------------------------------------------------------------------ picking nets
+
+def test_by_default_only_picked_nets_are_scanned():
+    s = ScanSettings()
+    assert s.scan_all_nets is False and s.selected_nets == []
+    from capscan.analysis.scan import run_scan as plain_run_scan
+    r = plain_run_scan(_everything_board(), s)
+    assert r.signal_nets == [] and r.crossings == [] and r.caps == []
+    assert r.candidate_nets == ["D0", "D1", "D2", "SIG", "SPI_CLK"]
+    assert any("No nets were picked" in w for w in r.warnings)
+
+
+def test_picked_nets_alone_are_scanned():
+    r = run_scan(_everything_board(), all_nets=False, nets=["D0", "D1"])
+    assert r.signal_nets == ["D0", "D1"]
+    assert {c.net for c in r.crossings} == {"D0", "D1"} and len(r.caps) == 1
+    assert r.via_changes() == [] and r.voids() == []
+    assert any("Only 2 of 5 signal nets were scanned" in w for w in r.warnings)
+
+
+def test_picking_a_net_the_board_lacks_is_said():
+    r = run_scan(_everything_board(), all_nets=False, nets=["SPI_CLK", "GONE", "GND"])
+    assert r.signal_nets == ["SPI_CLK"]
+    assert any("not signal nets on this board" in w and "GONE" in w and "GND" in w
+               for w in r.warnings)
+
+
+def test_candidates_ignore_the_selection():
+    from capscan.analysis.references import signal_net_candidates
+    s = ScanSettings(selected_nets=["D0"], ignore_nets=["SPI*"])
+    assert signal_net_candidates(_everything_board(), s) == ["D0", "D1", "D2", "SIG"]

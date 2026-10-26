@@ -141,7 +141,7 @@ class ScanResult:
     settings: ScanSettings
     layer_names: Dict[int, str]
     plane_nets: List[str]
-    signal_nets: List[str]
+    signal_nets: List[str]                          # the signals scanned
     references: Dict[int, List[Tuple[int, float]]]  # signal layer -> [(ref layer, h mm)]
     crossings: List[Crossing] = field(default_factory=list)
     transitions: List[Transition] = field(default_factory=list)
@@ -152,6 +152,7 @@ class ScanResult:
     track_heat: List[Tuple[int, float]] = field(default_factory=list)   # (track index, 0..1)
     warnings: List[str] = field(default_factory=list)
     kicad_version: str = ""
+    candidate_nets: List[str] = field(default_factory=list)   # every signal net on the board
     created: str = ""
     seconds: float = 0.0
 
@@ -203,6 +204,7 @@ class ScanResult:
                 "heat": [h.to_dict() for h in self.heat],
                 "track_heat": [list(t) for t in self.track_heat],
                 "warnings": self.warnings, "kicad_version": self.kicad_version,
+                "candidate_nets": self.candidate_nets,
                 "created": self.created, "seconds": self.seconds}
 
     @classmethod
@@ -239,6 +241,7 @@ class ScanResult:
             heat=[HeatLayer.from_dict(h) for h in d["heat"]],
             track_heat=[tuple(t) for t in d.get("track_heat", [])],
             warnings=list(d.get("warnings", [])), kicad_version=d.get("kicad_version", ""),
+            candidate_nets=list(d.get("candidate_nets", [])),
             created=d.get("created", ""), seconds=d.get("seconds", 0.0))
 
     def save(self, path) -> Path:

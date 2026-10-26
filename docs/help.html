@@ -21,8 +21,12 @@ code { background: #eee; padding: 1px 4px; border-radius: 3px; }
 
 <h2>In three steps</h2>
 <ol>
-  <li>Open the board in KiCad's PCB editor and click the <b>CapScan</b> button. The scan
-      starts at once. It refills the zones first, unless you untick that.</li>
+  <li>Open the board in KiCad's PCB editor and click the <b>CapScan</b> button. It lists the
+      board's signal nets under <i>Nets to scan</i>. Tick <b>Scan all signal nets</b>, or
+      type in the filter box (<code>USB</code>, <code>DDR*</code>, <code>CLK?</code>), tick the
+      nets you want (<i>Select shown</i> ticks all the filter shows), and click <b>Scan
+      board</b>. The scan refills the zones first, unless you untick that. Your picks are
+      remembered for the board, and the next time it scans them straight away.</li>
   <li>Read the <b>Stitching Caps</b> tab. Each row is a part to add: its value, voltage
       rating, the two nets it bridges, where it goes (X / Y in KiCad's board coordinates, the
       side, the rotation), and the signals it returns current for.</li>
@@ -73,7 +77,7 @@ part) in KiCad.</p>
 </table>
 
 <h2>Settings</h2>
-<p>Nothing needs setting. Four switches at the top of the <i>Scan</i> panel turn each kind of
+<p>Apart from the nets, nothing needs setting. Four switches at the top of the <i>Scan</i> panel turn each kind of
 check on or off: split crossings, vias onto another net's plane, vias onto another plane of
 the same net, and voids. A check that is off is not looked for, and the summary and reports
 say so. The panel also has the reach of a capacitor, the signals

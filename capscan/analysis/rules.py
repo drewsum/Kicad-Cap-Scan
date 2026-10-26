@@ -26,6 +26,10 @@ class ScanSettings:
     check_voids: bool = True            # traces over no plane: flagged for rerouting
 
     # --- the signals ------------------------------------------------------------------
+    #: Scan every signal net, or only :attr:`selected_nets` (picked by hand in the window).
+    scan_all_nets: bool = False
+    #: The signal nets to scan when :attr:`scan_all_nets` is off, by exact name.
+    selected_nets: List[str] = field(default_factory=list)
     #: Edge rate every signal is assumed to have. 100 ps (knee frequency 0.35 / tr, about
     #: 3.5 GHz) covers DDR, PCIe, USB 3, fast SPI and GPIO edges from modern parts.
     edge_rate_ps: float = 100.0

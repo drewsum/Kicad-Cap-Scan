@@ -5,7 +5,7 @@ import pytest
 pytest.importorskip("kipy")
 
 from kicad_fake import VERSIONS, FakeKiCad  # noqa: E402
-from capscan.analysis.scan import run_scan  # noqa: E402
+from boards import scan as run_scan  # noqa: E402
 from capscan.kicad.extract import extract_board  # noqa: E402
 
 

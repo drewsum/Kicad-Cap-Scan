@@ -27,6 +27,7 @@ from capscan.analysis.rules import DESCRIPTIONS, ScanSettings
 from capscan.gui import app as capscan_app
 from capscan.gui.board_map import BoardMap
 from capscan.gui.docks import make_detachable
+from capscan.gui.net_picker import NetPicker
 from capscan.gui.worker import QtProgress, Task
 from capscan.model.board import BoardSnapshot, CopperLayer
 from capscan.report.maps import MapData
@@ -47,6 +48,7 @@ STATUS_COLORS = {NEW_CAP: "#ffc060", "existing cap": "#60d060", UNFIXABLE: "#ff6
                  "new via": "#ffc060", "existing via": "#60d060"}
 LOG_COLORS = {logging.WARNING: "#ffc060", logging.ERROR: "#ff8080"}
 SETTINGS_KEY = "scan_settings"
+NETS_KEY = "nets/"              # + board file name: the nets picked for that board
 
 
 class _Item(QTableWidgetItem):
@@ -103,11 +105,17 @@ class SettingsPanel(QWidget):
         super().__init__(parent)
         self._fields = {}
         layout = QVBoxLayout(self)
-        intro = QLabel("No setup needed: every net that is not a plane is taken as a fast "
-                       "digital signal, and the defaults lean towards more stitching.")
+        intro = QLabel("Pick the nets to scan, or scan them all. Every net scanned is taken "
+                       "as a fast digital signal, and the defaults lean towards more "
+                       "stitching.")
         intro.setWordWrap(True)
         intro.setStyleSheet(HINT)
         layout.addWidget(intro)
+        nets_box = QGroupBox("Nets to scan")
+        QVBoxLayout(nets_box).addWidget(NetPicker())
+        self.nets: NetPicker = nets_box.layout().itemAt(0).widget()
+        self.nets.set_scan_all(settings.scan_all_nets)
+        layout.addWidget(nets_box, 1)
         basic = QFormLayout()
         layout.addLayout(basic)
         self.advanced = QGroupBox("Advanced")
@@ -147,7 +155,6 @@ class SettingsPanel(QWidget):
         self.defaults = QPushButton("Restore defaults")
         self.defaults.clicked.connect(lambda: self.load(ScanSettings()))
         layout.addWidget(self.defaults)
-        layout.addStretch(1)
 
     @staticmethod
     def _editor(value):
@@ -179,6 +186,7 @@ class SettingsPanel(QWidget):
                 w.setText(str(v))
         self.ignore.setText(", ".join(s.ignore_nets))
         self.extra.setText(", ".join(s.extra_plane_nets))
+        self.nets.set_scan_all(s.scan_all_nets)      # the ticked nets belong to the board
 
     def value(self) -> ScanSettings:
         s = ScanSettings()
@@ -193,6 +201,8 @@ class SettingsPanel(QWidget):
         split = lambda t: [x.strip() for x in t.split(",") if x.strip()]
         s.ignore_nets = split(self.ignore.text())
         s.extra_plane_nets = split(self.extra.text())
+        s.scan_all_nets = self.nets.scan_all()
+        s.selected_nets = self.nets.selected()
         return s
 
 
@@ -228,8 +238,9 @@ class MainWindow(QMainWindow):
         self._restore_settings()
         if result is not None and snapshot is not None:
             self._show_result(snapshot, result)
-        elif autorun and (board is not None or snapshot is not None):
-            self.start_scan()
+        elif board is not None or snapshot is not None:
+            self.load_board(autoscan=autorun)
+        self.settings_panel.nets.changed.connect(self._update_actions)
         self._update_actions()
 
     # ------------------------------------------------------------------ layout
@@ -349,8 +360,11 @@ class MainWindow(QMainWindow):
         has = self.result is not None
         running = self._task is not None and self._task.isRunning()
         live = self.board is not None
-        self.act_scan.setEnabled(not running and (live or self.snapshot is not None))
+        ready = self.settings_panel.nets.ready()
+        self.act_scan.setEnabled(not running and ready and (live or self.snapshot is not None))
         self.settings_panel.run.setEnabled(self.act_scan.isEnabled())
+        tip = "" if ready else "Pick nets to scan, or tick 'Scan all signal nets'"
+        self.settings_panel.run.setToolTip(tip)
         for a in (self.act_html, self.act_pdf, self.act_save):
             a.setEnabled(has and not running)
         self.act_markers.setEnabled(has and live and not running)
@@ -366,13 +380,71 @@ class MainWindow(QMainWindow):
                 log.warning("Saved settings ignored: %s", e)
 
     def _save_settings(self, s: ScanSettings):
-        self._qsettings.setValue(SETTINGS_KEY, json.dumps(s.to_dict()))
+        d = s.to_dict()
+        d.pop("selected_nets")
+        self._qsettings.setValue(SETTINGS_KEY, json.dumps(d))
+        name = self._board_name()
+        if name:
+            self._qsettings.setValue(NETS_KEY + name, json.dumps(s.selected_nets))
+
+    def _board_name(self) -> str:
+        if self.snapshot is not None:
+            return self.snapshot.board_name
+        try:
+            return self.board.name if self.board is not None else ""
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _saved_nets(self) -> List[str]:
+        name = self._board_name()
+        try:
+            return list(json.loads(self._qsettings.value(NETS_KEY + name, "[]") or "[]"))
+        except (ValueError, TypeError):
+            return []
+
+    # ------------------------------------------------------------------ the net list
+    def load_board(self, autoscan: bool = True):
+        """Read the board and list its signal nets; scan straight away when there is
+        something to scan (all nets, or nets picked for this board before)."""
+        settings = self.settings_panel.value()
+        board, kicad, cached = self.board, self.kicad, self.snapshot
+
+        def job(progress):
+            from capscan.analysis.references import signal_net_candidates
+            snap = cached
+            if board is not None:
+                from capscan.kicad.extract import extract_board
+                snap = extract_board(board, refill_zones=False, progress=progress)
+                try:
+                    snap.kicad_version = str(kicad.get_version()) if kicad else ""
+                except Exception:  # noqa: BLE001
+                    pass
+            with progress.timed("Listing signal nets"):
+                nets = signal_net_candidates(snap, settings)
+                progress.info(f"{len(nets)} signal nets")
+            return snap, nets
+
+        def done(out):
+            snap, nets = out
+            self.snapshot = snap
+            self.board_label.setText(f"<b>{snap.board_name}</b><br>{len(nets)} signal nets. "
+                                     "Pick the nets to scan on the right.")
+            self.settings_panel.nets.set_nets(nets, self._saved_nets())
+            if autoscan and self.settings_panel.nets.ready():
+                # The run that read the board is still winding down.
+                from qtpy.QtCore import QTimer
+                QTimer.singleShot(0, self.start_scan)
+
+        self._run(job, done)
 
     # ------------------------------------------------------------------ scanning
     def start_scan(self):
         if self._task is not None and self._task.isRunning():
             return
         settings = self.settings_panel.value()
+        if not (settings.scan_all_nets or settings.selected_nets):
+            self._log("Pick the nets to scan, or tick 'Scan all signal nets'.", logging.WARNING)
+            return
         self._save_settings(settings)
         refill = self.settings_panel.refill.isChecked()
         board, kicad, cached = self.board, self.kicad, self.snapshot
@@ -441,6 +513,8 @@ class MainWindow(QMainWindow):
     def _scan_done(self, out):
         snap, result = out
         self._show_result(snap, result)
+        if result.candidate_nets:
+            self.settings_panel.nets.set_nets(result.candidate_nets)
         self._log(f"Scan done in {result.seconds:.1f} s: {len(result.caps)} stitching "
                   f"capacitor(s) to add.")
         self._autosave()

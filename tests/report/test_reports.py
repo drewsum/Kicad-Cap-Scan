@@ -5,7 +5,7 @@ import os
 import pytest
 
 from boards import B_CU, F_CU, board, ic, track, two_pad_part, via
-from capscan.analysis.scan import run_scan
+from boards import scan as run_scan
 from capscan.report.html import report_html, write_html
 
 
