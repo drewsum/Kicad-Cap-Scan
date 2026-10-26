@@ -26,8 +26,9 @@ code { background: #eee; padding: 1px 4px; border-radius: 3px; }
       its signal nets under <i>Nets to scan</i>. Tick <b>Scan all signal nets</b>, or
       type in the filter box (<code>USB</code>, <code>DDR*</code>, <code>CLK?</code>), tick the
       nets you want (<i>Select shown</i> ticks all the filter shows), and click <b>Scan
-      board</b>. The scan refills the zones first, unless you untick that. Your picks are
-      remembered for the board, and the next time it scans them straight away.</li>
+      board</b>. It scans the zone fills as they are: tick <i>Refill zones before scanning</i>
+      if they may be stale. Your picks are remembered for the board and ticked again next
+      time; nothing is scanned until you click <b>Scan board</b>.</li>
   <li>Read the <b>Stitching Caps</b> tab. Each row is a part to add: its value, voltage
       rating, the two nets it bridges, where it goes (X / Y in KiCad's board coordinates, the
       side, the rotation), and the signals it returns current for.</li>

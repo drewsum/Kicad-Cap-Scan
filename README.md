@@ -86,8 +86,9 @@ Double-click any row to find it on the map and select that net in KiCad.
    you pick highlighted. It also lists the board's signal nets (planes and supplies are left out) under *Nets to scan*. Tick **Scan all
    signal nets**, or filter the list and tick the nets you want (*Select shown* ticks every
    net the filter shows), then click **Scan board**. The nets you pick are remembered for
-   that board, and next time it scans them straight away. The scan refills the zones first
-   by default, because the zone fills decide where the planes are.
+   that board and ticked again next time; nothing is scanned until you click **Scan board**.
+   The scan reads the zone fills as they are, and the fills decide where the planes are:
+   tick *Refill zones before scanning* (or press B in KiCad) if they may be stale.
 2. Read the summary on the left. The **Stitching Caps** tab is the list of parts to add.
 3. Click **Place markers** to see the spots in the PCB editor, then **Export PDF** or
    **Export HTML** for the report.

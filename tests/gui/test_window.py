@@ -88,9 +88,11 @@ def test_picked_nets_are_remembered_for_the_board(app, make_window):
     first = make_window()
     first.settings_panel.nets.set_selected(["D0", "D2"])
     _scan(app, first)
-    again = make_window()                        # same board: scans the same nets at once
-    _wait(app, lambda: again.result is not None and not again._task.isRunning())
+    again = make_window()                        # same board: the same nets, not scanned
     assert again.settings_panel.nets.selected() == ["D0", "D2"]
+    assert again.result is None and again._data.result.preview
+    assert not again.settings_panel.refill.isChecked()     # zones only refilled on request
+    _scan(app, again)
     assert again.result.signal_nets == ["D0", "D2"]
 
 

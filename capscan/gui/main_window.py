@@ -145,7 +145,7 @@ class SettingsPanel(QWidget):
         for w in self._adv_widgets:
             w.setVisible(False)
         self.refill = QCheckBox("Refill zones before scanning")
-        self.refill.setChecked(True)
+        self.refill.setChecked(False)
         self.refill.setToolTip("Zone fills decide where the planes are; stale fills give "
                                "stale results. Refilling changes the board in KiCad.")
         layout.addWidget(self.refill)
@@ -211,7 +211,7 @@ class SettingsPanel(QWidget):
 
 class MainWindow(QMainWindow):
     def __init__(self, kicad=None, board=None, snapshot: Optional[BoardSnapshot] = None,
-                 result: Optional[ScanResult] = None, autorun: bool = True):
+                 result: Optional[ScanResult] = None):
         super().__init__()
         self.kicad, self.board = kicad, board
         self.snapshot = snapshot
@@ -244,7 +244,7 @@ class MainWindow(QMainWindow):
         if result is not None and snapshot is not None:
             self._show_result(snapshot, result)
         elif board is not None or snapshot is not None:
-            self.load_board(autoscan=autorun)
+            self.load_board()
         from qtpy.QtCore import QTimer
         self._preview_timer = QTimer(self)
         self._preview_timer.setSingleShot(True)
@@ -420,9 +420,9 @@ class MainWindow(QMainWindow):
             return []
 
     # ------------------------------------------------------------------ the net list
-    def load_board(self, autoscan: bool = True):
-        """Read the board and list its signal nets; scan straight away when there is
-        something to scan (all nets, or nets picked for this board before)."""
+    def load_board(self):
+        """Read the board and list its signal nets, ticking those picked for this board
+        before. It is not scanned until asked."""
         settings = self.settings_panel.value()
         board, kicad, cached = self.board, self.kicad, self.snapshot
 
@@ -445,10 +445,6 @@ class MainWindow(QMainWindow):
             self.settings_panel.nets.set_nets(preview.candidate_nets, self._saved_nets())
             self.settings_panel.nets.blockSignals(False)
             self._show_preview()
-            if autoscan and self.settings_panel.nets.ready():
-                # The run that read the board is still winding down.
-                from qtpy.QtCore import QTimer
-                QTimer.singleShot(0, self.start_scan)
 
         self._run(job, done)
 
