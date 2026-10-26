@@ -25,7 +25,7 @@ from capscan import __version__
 from capscan.analysis.results import NEW_CAP, UNFIXABLE, VIA_CAP, ScanResult
 from capscan.analysis.rules import DESCRIPTIONS, ScanSettings
 from capscan.gui import app as capscan_app
-from capscan.gui.board_map import BoardMap
+from capscan.gui.board_map import BoardMap, HeatToggles
 from capscan.gui.docks import make_detachable
 from capscan.gui.net_picker import NetPicker
 from capscan.gui.worker import QtProgress, Task
@@ -125,7 +125,7 @@ class SettingsPanel(QWidget):
         self.advanced.toggled.connect(lambda on: [w.setVisible(on) for w in self._adv_widgets])
         self._adv_widgets: List[QWidget] = []
         for name, label in DESCRIPTIONS.items():
-            w = self._editor(getattr(settings, name))
+            w = self._editor(getattr(settings, name), name in self.CAN_BE_OFF)
             self._fields[name] = w
             if name in self.BASIC:
                 basic.addRow(label, w)
@@ -156,14 +156,17 @@ class SettingsPanel(QWidget):
         self.defaults.clicked.connect(lambda: self.load(ScanSettings()))
         layout.addWidget(self.defaults)
 
+    #: Counts where 0 turns the rule off.
+    CAN_BE_OFF = ("power_min_zone_layers", "power_via_array")
+
     @staticmethod
-    def _editor(value):
+    def _editor(value, can_be_off: bool = False):
         if isinstance(value, bool):
             w = QCheckBox()
             w.setChecked(value)
         elif isinstance(value, int):
             w = QSpinBox()
-            w.setRange(1, 64)
+            w.setRange(0 if can_be_off else 1, 64)
             w.setValue(value)
         elif isinstance(value, float):
             w = QDoubleSpinBox()
@@ -225,6 +228,7 @@ class MainWindow(QMainWindow):
         self._build_3d_tab()
         self.map = BoardMap()
         self.map.picked.connect(self._on_picked)
+        self.map.heat_changed.connect(self._heat_changed)
         self.tabs.addTab(self.map, "2D Placement")
         self.caps_table, self.signals_table = _table(), _table()
         self.crossings_table, self.vias_table, self.existing_table = _table(), _table(), _table()
@@ -267,6 +271,13 @@ class MainWindow(QMainWindow):
             self._group_boxes[group] = cb
         self.layer_bar.addStretch(1)
         layout.addLayout(self.layer_bar)
+        heat_bar = QHBoxLayout()
+        self.heat_3d = HeatToggles()        # kept in step with the 2D tab's
+        self.heat_3d.changed.connect(lambda: self.map.heat.set_kinds(self.heat_3d.kinds(),
+                                                                     emit=True))
+        heat_bar.addWidget(self.heat_3d)
+        heat_bar.addStretch(1)
+        layout.addLayout(heat_bar)
         self.viewer = None
         if Viewer3D is not None:
             try:
@@ -569,7 +580,14 @@ class MainWindow(QMainWindow):
         self.tabs.setTabText(5, f"Via Transitions ({c['via_changes']})")
         self._update_actions()
 
-    def _show_3d(self):
+    def _heat_changed(self):
+        """Other kinds of heat ticked (on either tab): the 2D map is redrawn already."""
+        self.heat_3d.set_kinds(self.map.heat.kinds())
+        self._show_3d(keep_camera=True)
+
+    def _show_3d(self, keep_camera: bool = False):
+        self.heat_3d.set_counts(None if self._data is None or self._data.result.preview
+                                else self._data.result.heat_counts())
         for cb in self._layer_boxes:
             self.layer_bar.removeWidget(cb)
             cb.deleteLater()
@@ -578,15 +596,15 @@ class MainWindow(QMainWindow):
             return
         from capscan.report.scene3d import build_scene
         try:
-            self.viewer.show_scene(build_scene(self._data))
+            self.viewer.show_scene(build_scene(self._data), keep_camera=keep_camera)
         except Exception as e:  # noqa: BLE001 - the rest of the window still works
             log.exception("3D view failed")
             self._log(f"3D view failed: {e}", logging.WARNING)
             return
         shown = self._data.result
-        for h in shown.heat:
+        for h in self._data.heat:
             cb = QCheckBox(shown.layer_name(h.layer))
-            cb.setChecked(True)
+            cb.setChecked(self.viewer.layer_visible(h.layer))
             cb.toggled.connect(lambda on, l=h.layer: self.viewer.set_layer_visible(l, on))
             self.layer_bar.insertWidget(1 + len(self._layer_boxes), cb)
             self._layer_boxes.append(cb)

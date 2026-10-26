@@ -7,13 +7,14 @@ from __future__ import annotations
 import base64
 import io
 from dataclasses import dataclass
-from typing import Dict, Optional, Sequence
+from typing import Dict, Iterable, Optional, Sequence
 
 import numpy as np
 from shapely.geometry.base import BaseGeometry
 
+from capscan.analysis.heatmap import track_heat
 from capscan.analysis.references import zone_regions
-from capscan.analysis.results import SPLIT, UNFIXABLE, VOID, ScanResult
+from capscan.analysis.results import HEAT_KINDS, SPLIT, UNFIXABLE, VOID, ScanResult
 from capscan.geometry.copper import iter_polygons, poly_to_shapely
 from capscan.model.board import BoardSnapshot
 
@@ -49,7 +50,8 @@ LIGHT = Theme(face="#ffffff", axes="#ffffff", text="#222222", grid="#e4e4e4", bo
 class MapData:
     """What every map of one board draws, worked out once."""
 
-    def __init__(self, snap: BoardSnapshot, result: ScanResult):
+    def __init__(self, snap: BoardSnapshot, result: ScanResult,
+                 heat_kinds: Optional[Iterable[str]] = None):
         self.snap = snap
         self.result = result
         planes = set(result.plane_nets)
@@ -59,8 +61,19 @@ class MapData:
         self.outline = [poly_to_shapely(p) for p in snap.outline]
         self.net_color = {n: NET_COLORS[i % len(NET_COLORS)]
                           for i, n in enumerate(sorted(planes))}
-        heat = dict(result.track_heat)
-        self.track_heat = [heat.get(i, 0.0) for i in range(len(snap.tracks))]
+        self.set_heat_kinds(heat_kinds)
+
+    def set_heat_kinds(self, kinds: Optional[Iterable[str]] = None):
+        """Show the heat of these kinds of break (None: all), on the planes and tracks."""
+        r = self.result
+        kinds = list(HEAT_KINDS if kinds is None else kinds)
+        self.heat_kinds = kinds
+        self.heat = r.heat_map(kinds)
+        if r.preview or set(kinds) >= set(HEAT_KINDS):
+            heat = dict(r.track_heat)           # as scanned (or the preview's highlight)
+        else:
+            heat = dict(track_heat(self.snap.tracks, self.heat, r.references, r.signal_nets))
+        self.track_heat = [heat.get(i, 0.0) for i in range(len(self.snap.tracks))]
 
     def reference_layers(self):
         """The reference layers, the one with the most crossings first."""
@@ -108,7 +121,7 @@ def draw_map(ax, data: MapData, ref_layer: Optional[int], theme: Theme = DARK,
     layers = data.reference_layers() if ref_layer is None else [ref_layer]
 
     if show_heat:
-        for h in r.heat:
+        for h in data.heat:
             if h.layer in layers:
                 ny, nx = h.values.shape
                 x0, y0 = h.origin

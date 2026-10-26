@@ -44,6 +44,15 @@ class ScanSettings:
     plane_min_area_frac: float = 0.02
     plane_min_area_mm2: float = 25.0
     #: ... or when it is named like a supply or ground and has any zone fill at all.
+    #: A net is a supply, not a signal, whatever its name, when it has zone fills on this
+    #: many copper layers (0: never). Signals are routed, not poured; a regulator or load
+    #: switch output ("Net-(U2-OUT)") is poured on each layer it carries current on.
+    power_min_zone_layers: int = 2
+    #: ... or when this many of its vias stand in one array, each within
+    #: :attr:`power_via_pitch_mm` of the next (0: never). A signal changes layer through one
+    #: via; an array of them carries current.
+    power_via_array: int = 4
+    power_via_pitch_mm: float = 1.5
     #: A copper layer is a reference layer when plane-net fills cover this share of it.
     reference_layer_min_frac: float = 0.20
 
@@ -137,6 +146,9 @@ DESCRIPTIONS = {
     "split_gap_max_mm": "Widest plane gap treated as a split (mm)",
     "void_ignore_mm": "Shortest plane hole that counts as a void (mm)",
     "decoupling_ic_distance_mm": "Cap within this of an IC pin is decoupling (mm)",
+    "power_min_zone_layers": "Supply if poured on this many layers (0: off)",
+    "power_via_array": "Supply if this many vias stand in an array (0: off)",
+    "power_via_pitch_mm": "Via array pitch, at most (mm)",
     "cap_value": "Capacitor value",
     "cap_dielectric": "Dielectric",
     "cap_package": "Package",

@@ -28,9 +28,10 @@ counted as a stitching capacitor.
 
 ## What you get
 
-* **3D Heat Map**: each reference plane with the density of split crossings rendered on it.
-  Hotter means more routing crossing splits in a small area. Signals are colored by heat
-  and the new capacitors are drawn on the board.
+* **3D Heat Map**: each reference plane with the density of return-path breaks rendered on
+  it: splits, voids, vias that need a stitching cap, and vias still missing a return via.
+  Hotter means more breaks in a small area. Tick boxes pick which kinds of break add heat.
+  Signals are colored by heat and the new capacitors are drawn on the board.
 * **2D Placement**: one reference layer at a time. Plane nets are filled, crossings are
   marked, and the capacitors and return vias are labeled. Click one to find it in the tables.
 * **Tables**:
@@ -101,7 +102,9 @@ the board as `<board>.capscan.json.gz`.
 ## How it works
 
 1. **Planes and signals.** A net is a plane net if its zone fills cover 2 % of the board on
-   some layer, or if it is named like a supply or ground and has any fill. Every other routed
+   some layer, or if it is named like a supply or ground and has any fill. A net is also a
+   supply, whatever its name, when it is poured on two or more layers or has an array of four
+   or more vias (a regulator output the schematic left as `Net-(U2-OUT)`). Every other routed
    net is a signal. Differential pairs (`_P`/`_N`, `+`/`-`) count as one return path.
 2. **Reference layers.** A copper layer is a reference layer if plane nets cover 20 % of it.
    Each signal layer returns its current on the nearest reference layer above it and the

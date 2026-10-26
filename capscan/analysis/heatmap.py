@@ -1,9 +1,11 @@
-"""Heat maps: where routing crosses plane splits most densely.
+"""Heat maps: where return paths break most densely.
 
-Each crossing (a split, a void, or a via onto another net's plane) adds a Gaussian on its
-reference layer, weighted by its severity, with a spread of about one capacitor's reach. Hot
-areas are where many signals lose their return path close together. Every map is
-scaled by the hottest spot on the board, so layers compare directly.
+Each break adds a Gaussian on its reference layer, weighted by its severity, with a spread
+of about one capacitor's reach: a split, a void, a via onto another net's plane, or a via
+onto another plane of the same net that still needs a return via. Each kind of break gets
+its own map, so the window can show any of them; ``ScanResult.heat_map`` adds the ones
+shown and scales them by the hottest spot on the board, so layers compare directly. Hot
+areas are where many signals lose their return path close together.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 
-from capscan.analysis.results import OTHER_PLANE, VIA_CAP, Crossing, HeatLayer, Transition
+from capscan.analysis.results import Crossing, HeatLayer, Transition, heat_kind
 from capscan.analysis.rules import ScanSettings
 from capscan.model.board import Track
 
@@ -33,33 +35,31 @@ def _grid(bounds, step: float):
 
 def heat_maps(bounds, crossings: Sequence[Crossing], transitions: Sequence[Transition],
               settings: ScanSettings) -> List[HeatLayer]:
+    """The unscaled heat of each kind of break on each layer it breaks."""
     if bounds is None:
         return []
     x0, y0, step, nx, ny = _grid(bounds, settings.heat_grid_mm)
     sigma = max(settings.max_cap_distance_mm, 4 * step)
     xs = x0 + step * np.arange(nx)
     ys = y0 + step * np.arange(ny)
-    points: Dict[int, List[Tuple[float, float, float]]] = {}
+    points: Dict[Tuple[str, int], List[Tuple[float, float, float]]] = {}
     for c in crossings:
-        if c.status != OTHER_PLANE:
-            points.setdefault(c.ref_layer, []).append((*c.position, c.severity))
+        if heat_kind(c):
+            points.setdefault((c.kind, c.ref_layer), []).append((*c.position, c.severity))
     for t in transitions:
-        if t.kind == VIA_CAP:           # onto another net's plane: a split, in effect
+        if heat_kind(t):                # the return current changes planes here
             for layer in set(t.ref_layers):
                 if layer >= 0:
-                    points.setdefault(layer, []).append((*t.position, 1.0))
-    maps = {}
-    for layer, pts in points.items():
+                    points.setdefault((t.kind, layer), []).append((*t.position, 1.0))
+    out = []
+    for (kind, layer), pts in sorted(points.items(), key=lambda kv: (kv[0][1], kv[0][0])):
         arr = np.asarray(pts)
         # Separable Gaussians: one row and one column factor per point.
         gx = np.exp(-0.5 * ((xs[None, :] - arr[:, 0:1]) / sigma) ** 2)      # (n, nx)
         gy = np.exp(-0.5 * ((ys[None, :] - arr[:, 1:2]) / sigma) ** 2)      # (n, ny)
-        maps[layer] = (gy * arr[:, 2:3]).T @ gx                              # (ny, nx)
-    peak = max((m.max() for m in maps.values()), default=0.0)
-    if peak <= 0:
-        return []
-    return [HeatLayer(layer=l, origin=(x0, y0), step_mm=step, values=m / peak)
-            for l, m in sorted(maps.items())]
+        out.append(HeatLayer(layer=layer, origin=(x0, y0), step_mm=step,
+                             values=(gy * arr[:, 2:3]).T @ gx, kind=kind))   # (ny, nx)
+    return out
 
 
 def sample(heat: HeatLayer, xy) -> float:
@@ -74,7 +74,8 @@ def sample(heat: HeatLayer, xy) -> float:
 def track_heat(tracks: Sequence[Track], heat: Sequence[HeatLayer],
                references: Dict[int, List[Tuple[int, float]]],
                signal_nets: Sequence[str]) -> List[Tuple[int, float]]:
-    """Each signal track's heat: the hottest of its reference layers' maps along it."""
+    """Each signal track's heat: the hottest of its reference layers' maps along it.
+    ``heat`` is a combined map (:meth:`ScanResult.heat_map`)."""
     by_layer = {h.layer: h for h in heat}
     signals = set(signal_nets)
     out = []

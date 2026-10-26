@@ -343,7 +343,8 @@ def report_html(snap: BoardSnapshot, r: ScanResult, pdf: bool = False,
         out.append(f"<figure><img src='data:image/png;base64,{png}' "
                    f"alt='{_e(r.layer_name(layer))}' width='{900 if pdf else 1000}'>"
                    f"<figcaption class='note'>{_e(r.layer_name(layer))}: heat is the density "
-                   "of split crossings.</figcaption></figure>")
+                   "of return-path breaks: splits, voids, and vias that need a cap or a "
+                   "return via.</figcaption></figure>")
     out.append("</div>")
     out.append("<h2 id='3d'>3D heat map</h2>")
     if pdf:

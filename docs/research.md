@@ -40,6 +40,7 @@ The usual cure, short of rerouting, is a path for the return current at the brea
 | Ignored holes | Holes in one net's plane shorter than 1 mm under the trace | Via antipads and thermal-relief spokes: a small detour |
 | Pad clearances | A hole round a through-hole pad or via of the trace's own net, where the trace ends or runs through it, reaching up to 1 mm past the pad | The signal leaves the layer through that pad; the hole is its clearance, not a break in the return path |
 | Plane net | A zone fill of 2 % of the board (or 25 mm²), or a supply / ground name with any fill | So that pours count but small copper islands do not |
+| Supply by its copper | Zone fills on 2 or more layers, or an array of 4 or more of its vias each within 1.5 mm of the next; either can be turned off (0) | A rail the schematic left unnamed ("Net-(U2-OUT)" on a load switch or regulator output) is still poured, and carries its current through via arrays. A signal is routed, not poured, and changes layer through one via at a time. Taken as a signal, such a rail's own via array cuts a slot in the ground plane under its own trace, which reads as a void |
 | Reference layer | Plane nets cover 20 % of it | So that an outer layer with a little ground pour stays a signal layer |
 
 ## Turning checks off
@@ -63,8 +64,17 @@ a clean board. All four are on by default.
 
 The heat map puts a Gaussian of severity weight on each break, on the reference layer it is
 on, with a spread equal to the capacitor reach. Hot areas are where many signals lose their
-return path close together, which is where crosstalk and EMI are worst. Same-net plane
-changes (fixed with a via) are not splits and do not count.
+return path close together, which is where crosstalk and EMI are worst. Every kind of break
+adds heat:
+
+* a split crossing, and a void (but not one a stripline's other, solid plane covers);
+* a via onto another net's plane, on both of its reference layers;
+* a via onto another plane of the same net that has no return via within reach, on both
+  planes. One that already has its return via does not count: its return path is whole.
+
+Each kind is kept on its own map. The window's Heat tick boxes pick which ones are added up,
+and the sum is scaled by its hottest spot, so a board whose only trouble is missing return
+vias still shows where they cluster.
 
 ## What CapScan does not do
 

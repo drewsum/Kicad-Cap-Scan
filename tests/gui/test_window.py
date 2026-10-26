@@ -173,3 +173,24 @@ def test_picked_nets_light_up_in_the_preview(app, make_window):
     _wait(app, lambda: w._data.track_heat == [1.0, 1.0, 1.0])
     _scan(app, w)
     assert not w._data.result.preview and "Not scanned yet" not in w.summary_label.text()
+
+
+def test_heat_tick_boxes_pick_the_heat_shown_on_both_tabs(app, make_window):
+    from capscan.analysis.results import SPLIT, VIA_CAP, VIA_STITCH, VOID
+    from capscan.report.maps import MapData
+    w = make_window()
+    assert w.map.heat.boxes[SPLIT].text() == "Splits"      # no counts before a scan
+    w.settings_panel.nets.set_scan_all(True)
+    _scan(app, w)
+    assert w.map.heat.boxes[SPLIT].text() == "Splits (3)"
+    assert w.heat_3d.boxes[VIA_STITCH].text() == "Return vias (0)"
+    assert w._data.heat and max(w._data.track_heat) > 0.5
+
+    w.map.heat.boxes[SPLIT].setChecked(False)               # on the 2D tab
+    assert w._data.heat_kinds == [VOID, VIA_CAP, VIA_STITCH]
+    assert not w.heat_3d.boxes[SPLIT].isChecked()           # the 3D tab follows
+    assert w._data.heat == [] and max(w._data.track_heat) == 0.0
+
+    w.heat_3d.boxes[SPLIT].setChecked(True)                 # and back, on the 3D tab
+    assert w.map.heat.boxes[SPLIT].isChecked()
+    assert w._data.track_heat == MapData(w.snapshot, w.result).track_heat   # all, as scanned
