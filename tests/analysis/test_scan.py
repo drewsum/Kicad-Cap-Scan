@@ -275,3 +275,52 @@ def test_result_round_trips(tmp_path):
 
 def test_kinds_are_exclusive():
     assert len({SPLIT, VOID}) == 2
+
+
+# ------------------------------------------------------------------ turning checks off
+
+def _everything_board():
+    tracks = crossing_bus() + [track("SIG", B_CU, (2.0, 12.0), (12.0, 12.0)),
+                               track("SPI_CLK", F_CU, (5.0, 25.0), (10.0, 25.0)),
+                               track("SPI_CLK", B_CU, (10.0, 25.0), (15.0, 25.0))]
+    return board(tracks=tracks, vias=[via("SPI_CLK", (10.0, 25.0), "sigvia")])
+
+
+def test_everything_is_checked_by_default():
+    r = run_scan(_everything_board())
+    assert len(r.splits()) == 3 and len(r.voids()) == 1 and len(r.via_changes()) == 1
+    assert len(r.caps) == 3 and not any("Not checked" in w for w in r.warnings)
+
+
+@pytest.mark.parametrize("off, caps, splits, voids, vias", [
+    ("check_splits", 1, 0, 1, 1),
+    ("check_via_caps", 2, 3, 1, 0),
+    ("check_voids", 3, 3, 0, 1),
+])
+def test_a_check_turned_off_adds_nothing(off, caps, splits, voids, vias):
+    r = run_scan(_everything_board(), ScanSettings(**{off: False}))
+    assert (len(r.caps), len(r.splits()), len(r.voids()), len(r.via_changes())) == \
+        (caps, splits, voids, vias)
+    assert any(w.startswith("Not checked (turned off)") for w in r.warnings)
+    if off == "check_splits":                # no heat left where the bus crosses the split
+        from capscan.analysis.heatmap import sample
+        (h,) = [h for h in r.heat if h.layer == IN2]
+        assert sample(h, (20, 6)) < 0.05
+
+
+def test_return_via_check_turned_off():
+    r = run_scan(_via_board(zones=_gnd_gnd_zones()), ScanSettings(check_via_stitch=False))
+    assert r.via_changes() == [] and r.stitch_vias == []
+    assert "vias onto another plane of the same net" in r.warnings[-1]
+
+
+def test_all_checks_off():
+    s = ScanSettings(check_splits=False, check_via_caps=False, check_via_stitch=False,
+                     check_voids=False)
+    r = run_scan(_everything_board(), s)
+    assert r.crossings == [] and r.transitions == [] and r.caps == [] and r.heat == []
+
+
+def test_checks_survive_saving():
+    s = ScanSettings(check_via_caps=False)
+    assert ScanSettings.from_dict(s.to_dict()).check_via_caps is False

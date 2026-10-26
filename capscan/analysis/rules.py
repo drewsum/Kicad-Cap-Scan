@@ -16,6 +16,15 @@ VOLTAGE_RATINGS = (6.3, 10.0, 16.0, 25.0, 35.0, 50.0, 100.0)
 
 @dataclass
 class ScanSettings:
+    # --- what to check ------------------------------------------------------------------
+    #: Each kind of return-path break can be left out of the scan. One left out is not
+    #: looked for: it adds no capacitor, via, table row or heat, and the summary says it
+    #: was not checked.
+    check_splits: bool = True           # traces over a split: stitching caps
+    check_via_caps: bool = True         # vias onto another net's plane: stitching caps
+    check_via_stitch: bool = True       # vias onto another plane of the same net: return vias
+    check_voids: bool = True            # traces over no plane: flagged for rerouting
+
     # --- the signals ------------------------------------------------------------------
     #: Edge rate every signal is assumed to have. 100 ps (knee frequency 0.35 / tr, about
     #: 3.5 GHz) covers DDR, PCIe, USB 3, fast SPI and GPIO edges from modern parts.
@@ -84,6 +93,14 @@ class ScanSettings:
     # --- the heat map -----------------------------------------------------------------------
     heat_grid_mm: float = 0.5
 
+    def unchecked(self) -> List[str]:
+        """What the scan was told not to look for, in words."""
+        names = {"check_splits": "traces over plane splits",
+                 "check_via_caps": "vias onto another net's plane",
+                 "check_via_stitch": "vias onto another plane of the same net",
+                 "check_voids": "traces over voids"}
+        return [text for key, text in names.items() if not getattr(self, key)]
+
     @property
     def knee_ghz(self) -> float:
         return 0.35 / self.edge_rate_ps * 1000.0
@@ -104,6 +121,10 @@ class ScanSettings:
 
 #: What the window says of each setting, in the Advanced panel and the report.
 DESCRIPTIONS = {
+    "check_splits": "Check traces over plane splits (caps)",
+    "check_via_caps": "Check vias onto another net's plane (caps)",
+    "check_via_stitch": "Check vias onto another same-net plane (return vias)",
+    "check_voids": "Check traces over voids (reroute)",
     "edge_rate_ps": "Assumed signal edge rate (ps)",
     "max_cap_distance_mm": "Max cap distance from a split crossing (mm)",
     "via_cap_distance_mm": "Max cap distance from a reference-changing via (mm)",

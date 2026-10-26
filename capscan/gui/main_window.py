@@ -95,7 +95,8 @@ def _table() -> QTableWidget:
 class SettingsPanel(QWidget):
     """The scan settings: the few that matter up top, every rule under Advanced."""
 
-    BASIC = ("max_cap_distance_mm", "via_cap_distance_mm", "signals_per_cap", "cap_value",
+    BASIC = ("check_splits", "check_via_caps", "check_via_stitch", "check_voids",
+             "max_cap_distance_mm", "via_cap_distance_mm", "signals_per_cap", "cap_value",
              "cap_package")
 
     def __init__(self, settings: ScanSettings, parent=None):

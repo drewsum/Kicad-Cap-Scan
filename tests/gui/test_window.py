@@ -53,7 +53,17 @@ def test_double_click_highlights_on_the_map(window):
 
 def test_settings_round_trip(window):
     from capscan.analysis.rules import ScanSettings
-    s = ScanSettings(max_cap_distance_mm=4.0, signals_per_cap=3, ignore_nets=["TP*"])
+    s = ScanSettings(max_cap_distance_mm=4.0, signals_per_cap=3, ignore_nets=["TP*"],
+                     check_via_caps=False)
     window.settings_panel.load(s)
     back = window.settings_panel.value()
     assert (back.max_cap_distance_mm, back.signals_per_cap, back.ignore_nets) == (4.0, 3, ["TP*"])
+    assert back.check_via_caps is False and back.check_splits is True
+
+
+def test_check_switches_are_always_shown(window):
+    from qtpy.QtWidgets import QCheckBox
+    panel = window.settings_panel
+    for name in ("check_splits", "check_via_caps", "check_via_stitch", "check_voids"):
+        w = panel._fields[name]
+        assert isinstance(w, QCheckBox) and w not in panel._adv_widgets

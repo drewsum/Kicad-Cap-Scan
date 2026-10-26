@@ -40,6 +40,18 @@ The usual cure, short of rerouting, is a path for the return current at the brea
 | Plane net | A zone fill of 2 % of the board (or 25 mm²), or a supply / ground name with any fill | So that pours count but small copper islands do not |
 | Reference layer | Plane nets cover 20 % of it | So that an outer layer with a little ground pour stays a signal layer |
 
+## Turning checks off
+
+Each kind of break can be switched off in the Scan panel:
+* `check_splits`: traces over plane splits;
+* `check_via_caps`: vias onto another net's plane;
+* `check_via_stitch`: vias onto another plane of the same net;
+* `check_voids`: traces over voids.
+
+A check that is off is not looked for. It adds no capacitor, return via, table row or heat,
+and the summary and reports name it under "Not checked", so a partial scan never reads as
+a clean board. All four are on by default.
+
 ## Severity, and the heat map
 
 * A **microstrip** has one reference plane, so a split in it is a full break: severity 1.

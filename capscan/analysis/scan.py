@@ -10,7 +10,7 @@ from capscan.analysis.existing_caps import find_existing_caps
 from capscan.analysis.heatmap import heat_maps, track_heat
 from capscan.analysis.placement import credit_existing, mark_unfixable, needs_of, place_caps
 from capscan.analysis.references import build_references
-from capscan.analysis.results import ScanResult
+from capscan.analysis.results import SPLIT, VIA_CAP, VIA_STITCH, VOID, ScanResult
 from capscan.analysis.rules import ScanSettings
 from capscan.analysis.transitions import find_transitions
 from capscan.model.board import BoardSnapshot
@@ -37,14 +37,28 @@ def run_scan(snap: BoardSnapshot, settings: Optional[ScanSettings] = None,
                               + ", ".join(f"{names.get(r, r)} (h {h:.3f} mm)" for r, h in rl))
     progress.check_cancel()
 
+    if settings.unchecked():
+        warnings.append("Not checked (turned off): " + "; ".join(settings.unchecked()) + ".")
+
     with progress.timed("Walking every trace over its reference planes"):
-        crossings = find_crossings(snap, refs, settings, progress)
+        crossings = []
+        if settings.check_splits or settings.check_voids:
+            crossings = find_crossings(snap, refs, settings, progress)
+        wanted = {SPLIT: settings.check_splits, VOID: settings.check_voids}
+        crossings = [c for c in crossings if wanted[c.kind]]
         progress.info(f"{sum(c.kind == 'split' for c in crossings)} split crossings, "
                       f"{sum(c.kind == 'void' for c in crossings)} voids")
     progress.check_cancel()
 
     with progress.timed("Checking vias that change reference planes"):
-        transitions, stitch_vias = find_transitions(snap, refs, settings, progress)
+        transitions, stitch_vias = [], []
+        if settings.check_via_caps or settings.check_via_stitch:
+            transitions, stitch_vias = find_transitions(snap, refs, settings, progress)
+        if not settings.check_via_caps:
+            transitions = [t for t in transitions if t.kind != VIA_CAP]
+        if not settings.check_via_stitch:
+            transitions = [t for t in transitions if t.kind != VIA_STITCH]
+            stitch_vias = []
         progress.info(f"{sum(t.kind == 'cap' for t in transitions)} need a stitching cap, "
                       f"{sum(t.kind == 'via' for t in transitions)} a return via "
                       f"({len(stitch_vias)} missing)")

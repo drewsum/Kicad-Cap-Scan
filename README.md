@@ -85,7 +85,10 @@ Double-click any row to find it on the map and select that net in KiCad.
 3. Click **Place markers** to see the spots in the PCB editor, then **Export PDF** or
    **Export HTML** for the report.
 
-The *Scan* panel on the right has the few settings worth changing. *Advanced* holds every
+Each kind of break has its own switch at the top of the *Scan* panel. For example, turn
+off *Check vias onto another net's plane* to get capacitors for split crossings only. A
+check that is off is not looked for at all, and the summary and reports say it was not
+checked. The panel also has the few other settings worth changing. *Advanced* holds every
 rule, each explained in [docs/research.md](docs/research.md). Results are also saved beside
 the board as `<board>.capscan.json.gz`.
 
