@@ -8,3 +8,4 @@ dist/
 .ruff_cache/
 *.capscan.json.gz
 *.capscan-markers.json
+uv.lock
