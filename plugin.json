@@ -1,0 +1,22 @@
+{
+    "$schema": "https://go.kicad.org/api/schemas/v1",
+    "identifier": "com.github.drewsum.capscan",
+    "name": "CapScan",
+    "description": "Finds signals crossing plane splits and says where to put stitching capacitors",
+    "runtime": {
+        "type": "python",
+        "min_version": "3.10"
+    },
+    "actions": [
+        {
+            "identifier": "capscan.open",
+            "name": "CapScan Stitching Caps",
+            "description": "Scan the board for return-path breaks and place stitching capacitors",
+            "show-button": true,
+            "scopes": ["pcb"],
+            "entrypoint": "capscan_entry.py",
+            "icons-light": ["resources/capscan_24.png", "resources/capscan_48.png"],
+            "icons-dark": ["resources/capscan_24.png", "resources/capscan_48.png"]
+        }
+    ]
+}

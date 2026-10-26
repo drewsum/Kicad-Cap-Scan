@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CapScan user guide</title>
+<style>
+body { font-family: Segoe UI, Helvetica, Arial, sans-serif; margin: 24px auto; max-width: 900px;
+       color: #222; background: #fafafa; padding: 0 16px; line-height: 1.5; }
+h1 { margin-bottom: 0; } h2 { border-bottom: 2px solid #ddd; padding-bottom: 4px; margin-top: 32px; }
+table { border-collapse: collapse; background: white; font-size: 14px; }
+th, td { border: 1px solid #ddd; padding: 4px 8px; text-align: left; vertical-align: top; }
+th { background: #f0f0f0; }
+code { background: #eee; padding: 1px 4px; border-radius: 3px; }
+.note { color: #666; }
+</style>
+</head>
+<body>
+<h1>CapScan user guide</h1>
+<p class="note">Where to put stitching capacitors across plane splits.</p>
+
+<h2>In three steps</h2>
+<ol>
+  <li>Open the board in KiCad's PCB editor and click the <b>CapScan</b> button. The scan
+      starts at once. It refills the zones first, unless you untick that.</li>
+  <li>Read the <b>Stitching Caps</b> tab. Each row is a part to add: its value, voltage
+      rating, the two nets it bridges, where it goes (X / Y in KiCad's board coordinates, the
+      side, the rotation), and the signals it returns current for.</li>
+  <li>Click <b>Place markers</b> to see the spots on User.Comments in KiCad, then
+      <b>Export PDF</b> or <b>Export HTML</b> for the report.</li>
+</ol>
+
+<h2>The tabs</h2>
+<table>
+  <tr><th>3D Heat Map</th><td>Each reference plane, with the density of split crossings
+    rendered on it. Plane edges are outlined in their net's color. Signals near splits are
+    colored by heat, and the new capacitors are cyan blocks. Drag to turn, scroll to zoom,
+    and use the check boxes to hide layers.</td></tr>
+  <tr><th>2D Placement</th><td>One reference layer at a time:
+    <ul>
+      <li>planes filled by net, and the signals that return on that layer;</li>
+      <li>split crossings (×), voids (◇) and vias that change plane (○);</li>
+      <li>new capacitors (■, labeled CS#) and return vias (●, SV#);</li>
+      <li>existing capacitors (□): cyan when credited, amber when they are decoupling caps a
+        return would otherwise use.</li>
+    </ul>
+    Click a marker to select it.</td></tr>
+  <tr><th>Stitching Caps</th><td>The parts to add.</td></tr>
+  <tr><th>Signals</th><td>Every signal that loses its return path somewhere, with its
+    routing layers, the planes it returns on, and the parts that fix it.</td></tr>
+  <tr><th>Crossings</th><td>Every split and void under a trace, with the nets either side,
+    the gap, the dielectric height, and how it is fixed.</td></tr>
+  <tr><th>Via Transitions</th><td>Every via that moves a signal onto a different reference
+    plane, and whether it needs a capacitor or a return via.</td></tr>
+  <tr><th>Existing Caps</th><td>Capacitors already between two plane nets. Those next to an
+    IC pin are decoupling caps and are never counted as stitching caps.</td></tr>
+</table>
+<p>Double-click a row to find it on the map, aim the 3D view at it, and select its net (or
+part) in KiCad.</p>
+
+<h2>What the words mean</h2>
+<table>
+  <tr><th>Split</th><td>The trace runs over a gap between two plane nets (e.g. +3V3 and
+    +1V8 on one layer). Fix: a stitching capacitor between those nets, next to the crossing.</td></tr>
+  <tr><th>Void</th><td>The trace runs over no plane copper at all. A capacitor cannot help.
+    Reroute the trace or fill the plane. A void on one side of a stripline whose other plane
+    is solid is listed as <i>other plane</i>: that plane carries the return.</td></tr>
+  <tr><th>Via change</th><td>A via takes the signal to a layer whose reference plane is
+    another net (needs a capacitor) or another layer of the same net (needs a return via).</td></tr>
+  <tr><th>Severity</th><td>1 when the broken plane is the signal's only reference; 0.5 for
+    a stripline whose other plane is solid there.</td></tr>
+  <tr><th>Heat</th><td>How many breaks are close together, from 0 to 1 across the board.</td></tr>
+</table>
+
+<h2>Settings</h2>
+<p>Nothing needs setting. The <i>Scan</i> panel has the reach of a capacitor, the signals
+one capacitor may serve, and the part. <i>Advanced</i> has every other rule: what counts as a
+split, the decoupling test, the voltage rating, nets to ignore (<code>TP*</code>) and nets to
+treat as planes. The reasoning and sources for each default are in
+<code>docs/research.md</code>.</p>
+
+<h2>Markers</h2>
+<p><b>Place markers</b> draws, on User.Comments, in one undo step:</p>
+<ul>
+  <li>a circle and a line across the split for each capacitor, labeled
+    <code>[CapScan] CS3 100nF 16V</code>;</li>
+  <li>a circle for each return via;</li>
+  <li>a cross on each void.</li>
+</ul>
+<p><b>Clear markers</b> removes only what CapScan drew.</p>
+
+<h2>When something is wrong</h2>
+<ul>
+  <li><b>"Could not connect to KiCad"</b>: check <i>Preferences → Plugins → Enable KiCad
+    API</i>, and that a board is open in the PCB editor.</li>
+  <li><b>No reference layers found</b>: the zones are probably not filled. Press B in KiCad,
+    or leave <i>Refill zones before scanning</i> ticked.</li>
+  <li>Each session's log is in your temp folder under <code>capscan</code>. <i>About</i>
+    shows the path.</li>
+</ul>
+</body>
+</html>
