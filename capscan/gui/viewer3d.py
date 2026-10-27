@@ -23,8 +23,17 @@ _VIA_COLOR = (0.75, 0.50, 1.0)
 _COLD_TRACK = (0.55, 0.55, 0.55)
 #: Heat below this is transparent, so the planes and routing show through.
 _HEAT_OPACITY = [0.0, 0.0, 0.35, 0.6, 0.75, 0.85, 0.9]
-_BAR = dict(title="Crossing density", n_labels=3, fmt="%.1f", color="#cccccc",
-            vertical=True, position_x=0.88, position_y=0.1, height=0.5, width=0.04)
+# The scale bar sits against the view's right edge (next to the setup panes), leaving a
+# small gap, so it covers as little of the board as it can.
+_BAR_RIGHT = 0.995
+_BAR_WIDTH = 0.03
+_BAR_Y, _BAR_HEIGHT = 0.25, 0.5
+
+
+def _bar_args(title: str, fmt: str) -> dict:
+    return dict(title=title, vertical=True, position_x=_BAR_RIGHT - _BAR_WIDTH,
+                position_y=_BAR_Y, height=_BAR_HEIGHT, width=_BAR_WIDTH, fmt=fmt,
+                title_font_size=14, color="white", label_font_size=12)
 
 
 def _lines(segments: List[np.ndarray]) -> Optional[pv.PolyData]:
@@ -99,7 +108,7 @@ class Viewer3D(QWidget):
             grid.point_data["heat"] = sheet.values[::-1].ravel(order="C")
             self._add(f"layer{sheet.layer}", grid, scalars="heat", cmap="inferno", clim=(0, 1),
                       opacity=_HEAT_OPACITY, lighting=False, show_scalar_bar=i == 0,
-                      scalar_bar_args=_BAR)
+                      scalar_bar_args=_bar_args("Transition Density", "%.1f"))
 
         hot = _lines([s for s, _ in scene.hot_tracks])
         if hot is not None:
