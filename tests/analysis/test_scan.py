@@ -260,6 +260,17 @@ def test_decoupling_cap_is_flagged_not_credited():
     assert len(r.caps) == 2
 
 
+def test_decoupling_is_measured_from_the_pad_on_the_ic_net():
+    # A 1206: its centre is 3.4 mm from U1's +3V3 pin, its +3V3 pad 1.8 mm.
+    fp, pads = two_pad_part("C5", "10u", "+3V3", "+1V8", (40.0, 20.0))
+    pads[0].position, pads[1].position = (38.4, 20.0), (41.6, 20.0)
+    u, upads = ic("U1", [("+3V3", (36.6, 20.0)), ("GND", (36.6, 21)), ("SIG", (36.6, 22))])
+    r = run_scan(board(tracks=crossing_bus(), footprints=[fp, u], pads=pads + upads))
+    (e,) = r.existing
+    assert e.role == "decoupling" and e.near_ic == "U1.1"
+    assert r.counts()["existing_decoupling"] == 1
+
+
 def test_far_cap_is_not_credited():
     fp, pads = two_pad_part("C9", "100n", "+3V3", "+1V8", (20.0, 25.0), side="bottom")
     r = run_scan(board(tracks=crossing_bus(), footprints=[fp], pads=pads))

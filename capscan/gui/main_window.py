@@ -641,7 +641,8 @@ class MainWindow(QMainWindow):
         lines = [f"<b>{c['caps']}</b> stitching caps to add",
                  f"<b>{c['stitch_vias']}</b> return vias to add",
                  f"{c['splits']} split crossings, {c['via_changes']} vias changing plane",
-                 f"{c['existing_credited']} existing caps credited"]
+                 f"{c['existing_credited']} existing caps credited, "
+                 f"{c['existing_decoupling']} decoupling caps found"]
         if c["voids"]:
             lines.append(f"<span style='{ERROR}'>{c['voids']} voids: reroute or fill</span>")
         if c["decoupling_flags"]:

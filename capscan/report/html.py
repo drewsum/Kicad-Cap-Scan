@@ -113,7 +113,8 @@ def _tiles(r: ScanResult) -> str:
              ("Vias changing plane", c["via_changes"]), ("Return vias needed", c["stitch_vias"]),
              ("Voids (reroute)", c["voids"]),
              ("Returns via decoupling", c["decoupling_flags"]),
-             ("Existing caps credited", c["existing_credited"])]
+             ("Existing caps credited", c["existing_credited"]),
+             ("Decoupling caps found", c["existing_decoupling"])]
     return "<div class='tiles'>" + "".join(
         f"<div class='tile'><b>{v}</b>{_e(k)}</div>" for k, v in items) + "</div>"
 
@@ -170,9 +171,11 @@ def _signal_rows(r: ScanResult):
 
 
 def _existing_rows(r: ScanResult):
-    for e in r.existing:
-        if not (e.credited or e.flagged):
-            continue
+    """Every capacitor between two planes, the ones a scan used first, then decoupling ones
+    before stitching ones: one no crossing reached still shows it was found."""
+    used = sorted(r.existing, key=lambda e: (not (e.credited or e.flagged),
+                                             e.role != "decoupling", e.reference))
+    for e in used:
         yield (e.reference, e.value, e.net_a, e.net_b, _mm(e.position[0]), _mm(e.position[1]),
                e.side, e.role + (f" (next to {e.near_ic})" if e.near_ic else ""),
                ", ".join(e.credited), ", ".join(e.flagged))
@@ -331,8 +334,10 @@ def report_html(snap: BoardSnapshot, r: ScanResult, pdf: bool = False,
                        "Needs", "Fix", "By", "Decoupling caps"], _transition_rows(r),
                       left=(0, 1, 2, 3, 4, 5, 8, 9, 10, 11)))
     out.append("<h2 id='existing'>Existing capacitors between planes</h2>")
-    out.append("<p class='note'>A capacitor next to an IC pin on one of its nets is decoupling "
-               "that IC and is never counted as a return path.</p>")
+    out.append("<p class='note'>Every capacitor between two plane nets. One with a pad next to an "
+               "IC pin on the same net is decoupling that IC and is never counted as a return "
+               "path; the others are stitching capacitors, credited to the crossings within "
+               "reach.</p>")
     out.append(_table(["Ref", "Value", "Net A", "Net B", "X", "Y", "Side", "Role", "Credited for",
                        "Flagged for"], _existing_rows(r), left=(0, 1, 2, 3, 6, 7, 8, 9)))
 

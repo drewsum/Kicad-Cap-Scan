@@ -1,7 +1,7 @@
 """Capacitors already on the board between two plane nets.
 
-One that sits by itself is a stitching capacitor and counts. One next to an IC's pin on
-either of its nets is that IC's decoupling capacitor: return current through it would
+One that sits by itself is a stitching capacitor and counts. One with a pad near an IC's
+pin on the same net is that IC's decoupling capacitor: return current through it would
 run through the IC's supply connection, so it never counts, and a crossing that has
 only such a capacitor near it is flagged.
 """
@@ -41,10 +41,15 @@ def find_existing_caps(snap: BoardSnapshot, refs: References,
                        if pid in pads_by_id and pads_by_id[pid].net})
         if len(nets) != 2 or not all(n in planes for n in nets):
             continue
+        # Measured from the cap's own pad on that net: a decoupling cap sits pad to pin,
+        # and its centre can be well clear of the pin on a 0805 or larger.
         near, best = "", settings.decoupling_ic_distance_mm
-        for n in nets:
-            for label, pos in ic_pads.get(n, ()):
-                d = math.hypot(pos[0] - fp.position[0], pos[1] - fp.position[1])
+        for pid in fp.pad_ids:
+            cp = pads_by_id.get(pid)
+            if cp is None:
+                continue
+            for label, pos in ic_pads.get(cp.net, ()):
+                d = math.hypot(pos[0] - cp.position[0], pos[1] - cp.position[1])
                 if d <= best:
                     near, best = label, d
         out.append(ExistingCap(reference=fp.reference, value=fp.value, net_a=nets[0],

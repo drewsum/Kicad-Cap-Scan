@@ -33,6 +33,17 @@ def test_html_report_has_every_section(tmp_path):
     assert "SPI_CLK" in text and "In2.Cu" in text
 
 
+def test_html_report_lists_decoupling_caps_no_crossing_reached():
+    fp, pads = two_pad_part("C40", "100n", "+3V3", "+1V8", (5.0, 2.0))
+    u, upads = ic("U9", [("+3V3", (3.5, 2.0)), ("GND", (3.5, 3.0)), ("+1V8", (3.5, 4.0))])
+    snap = board(footprints=[fp, u], pads=pads + upads)
+    r = run_scan(snap)
+    (e,) = r.existing
+    assert e.role == "decoupling" and not (e.credited or e.flagged)
+    text = report_html(snap, r)
+    assert "<td class='l'>C40</td>" in text and "next to U9.1" in text
+
+
 def test_pdf_html_is_static():
     snap, r = _scan()
     text = report_html(snap, r, pdf=True)

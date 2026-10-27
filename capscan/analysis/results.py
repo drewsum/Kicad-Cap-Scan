@@ -240,6 +240,7 @@ class ScanResult:
                 "voids": len(self.voids()), "via_changes": len(self.via_changes()),
                 "stitch_vias": len(self.stitch_vias),
                 "existing_credited": sum(1 for e in self.existing if e.credited),
+                "existing_decoupling": sum(1 for e in self.existing if e.role == "decoupling"),
                 "decoupling_flags": len(self.decoupling_flags())}
 
     # --- files ---------------------------------------------------------------------

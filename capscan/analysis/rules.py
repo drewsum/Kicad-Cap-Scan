@@ -79,7 +79,7 @@ class ScanSettings:
     signals_per_cap: int = 2
 
     # --- existing capacitors ------------------------------------------------------------------
-    #: A capacitor this close to an IC's pin on either of its nets is decoupling that IC.
+    #: A capacitor with a pad this close to an IC's pin on the same net is decoupling that IC.
     #: Return current through it would flow through the IC's supply, so it never counts as a
     #: stitching capacitor; crossings that only have one nearby are flagged.
     decoupling_ic_distance_mm: float = 3.0
@@ -145,7 +145,7 @@ DESCRIPTIONS = {
     "signals_per_cap": "Signals per stitching cap",
     "split_gap_max_mm": "Widest plane gap treated as a split (mm)",
     "void_ignore_mm": "Shortest plane hole that counts as a void (mm)",
-    "decoupling_ic_distance_mm": "Cap within this of an IC pin is decoupling (mm)",
+    "decoupling_ic_distance_mm": "Cap pad within this of an IC pin is decoupling (mm)",
     "power_min_zone_layers": "Supply if poured on this many layers (0: off)",
     "power_via_array": "Supply if this many vias stand in an array (0: off)",
     "power_via_pitch_mm": "Via array pitch, at most (mm)",

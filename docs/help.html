@@ -60,8 +60,9 @@ code { background: #eee; padding: 1px 4px; border-radius: 3px; }
     the gap, the dielectric height, and how it is fixed.</td></tr>
   <tr><th>Via Transitions</th><td>Every via that moves a signal onto a different reference
     plane, and whether it needs a capacitor or a return via.</td></tr>
-  <tr><th>Existing Caps</th><td>Capacitors already between two plane nets. Those next to an
-    IC pin are decoupling caps and are never counted as stitching caps.</td></tr>
+  <tr><th>Existing Caps</th><td>Capacitors already between two plane nets. Those with a pad
+    next to an IC pin on the same net are decoupling caps and are never counted as stitching
+    caps. The HTML report lists them all, including the ones no crossing reached.</td></tr>
 </table>
 <p>Double-click a row to find it on the map, aim the 3D view at it, and select its net (or
 part) in KiCad.</p>

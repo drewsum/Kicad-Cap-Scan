@@ -35,7 +35,7 @@ The usual cure, short of rerouting, is a path for the return current at the brea
 | Signals per cap | 2 | A mounted 0402 has about 1 nH of loop inductance; sharing one among many switching signals defeats it |
 | Value | 100 nF X7R 0402 | TI recommends 1 µF or below; common practice is 1 nF to 100 nF. At these edge rates the package's inductance matters more than the value |
 | Voltage rating | ≥ 2 × the voltage between the nets, at least 16 V; 50 V when a name gives no voltage | Derating of class II ceramics under DC bias |
-| Decoupling test | Within 3 mm of an IC pin on either net | Return current through such a capacitor flows through the IC's supply pin and bond wires |
+| Decoupling test | A pad within 3 mm of an IC pin on the same net (pad to pin, not from the cap's centre, so a large cap beside its pin still counts) | Return current through such a capacitor flows through the IC's supply pin and bond wires |
 | Split vs void | A gap up to 2 mm between two nets is a split; any longer stretch over no plane is a void | The capacitor's vias must reach both planes |
 | Ignored holes | Holes in one net's plane shorter than 1 mm under the trace | Via antipads and thermal-relief spokes: a small detour |
 | Pad clearances | A hole round a through-hole pad or via of the trace's own net, where the trace ends or runs through it, reaching up to 1 mm past the pad | The signal leaves the layer through that pad; the hole is its clearance, not a break in the return path |
