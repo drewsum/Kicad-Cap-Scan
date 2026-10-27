@@ -371,7 +371,7 @@ class MainWindow(QMainWindow):
                             "Save the scan (JSON) to compare or reopen later")
         tb.addSeparator()
         act("Help", self.show_help)
-        act("About", self.show_about)
+        act("About", self.show_about, "Version, author, links, and what to put in a bug report")
 
     def _update_actions(self):
         has = self.result is not None
@@ -797,15 +797,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "CapScan", f"The user guide is at {help_file}")
 
     def show_about(self):
-        QMessageBox.about(
-            self, "About CapScan",
-            f"<b>CapScan {__version__}</b><br>Stitching capacitor advisor for KiCad.<br><br>"
-            "Finds every signal whose return current meets a plane split, a void, or a via "
-            "onto another plane, and says where to put stitching capacitors and return "
-            "vias.<br><br>"
-            "<a href='https://github.com/drewsum/Kicad-Cap-Scan'>"
-            "github.com/drewsum/Kicad-Cap-Scan</a><br>"
-            f"Log: {capscan_app.LOG_PATH}")
+        from capscan.gui.about import AboutDialog
+        kicad = self.snapshot.kicad_version if self.snapshot is not None else ""
+        AboutDialog(self, kicad_version=kicad).exec()
 
     def closeEvent(self, event):
         if self.viewer is not None:
