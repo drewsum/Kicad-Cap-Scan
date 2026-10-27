@@ -108,9 +108,11 @@ class Viewer3D(QWidget):
             grid.point_data["heat"] = sheet.values[::-1].ravel(order="C")
             self._add(f"layer{sheet.layer}", grid, scalars="heat", cmap="inferno", clim=(0, 1),
                       opacity=_HEAT_OPACITY, lighting=False, show_scalar_bar=i == 0,
-                      scalar_bar_args=_bar_args("Transition Density", "%.1f"))
+                      scalar_bar_args=_bar_args("Transitions", "%.1f"))
+        for bar in p.scalar_bars.values():
+            bar.SetTextPositionToPrecedeScalarBar()     # value ticks left of the bar
 
-        hot = _lines([s for s, _ in scene.hot_tracks])
+        hot =_lines([s for s, _ in scene.hot_tracks])
         if hot is not None:
             hot.cell_data["heat"] = np.array([h for _, h in scene.hot_tracks])
             self._add("tracks", hot, scalars="heat", cmap="inferno", clim=(0, 1), line_width=4,

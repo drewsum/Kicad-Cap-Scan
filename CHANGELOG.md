@@ -26,6 +26,7 @@ a release renames that heading to its version and date.
 - A capacitor is decoupling when one of its pads is within reach of an IC pin on the same
   net, measured pad to pin rather than from the cap's centre, so an 0805 or 1206 beside its
   pin is recognised (#8).
+- The 3D view's Transition Density scale shows its values to the left of the bar.
 
 ### Fixed
 - The window opens in front of KiCad on Windows instead of behind it (#3).
