@@ -12,6 +12,8 @@ from the list (a filter box finds `USB`, `DDR*` and so on). Every net scanned is
 a fast digital signal (100 ps edges), and every default leans towards more stitching rather
 than less: a basic utility that keeps every signal's return path next to it.
 
+What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
+
 ## What it finds
 
 | Problem | What CapScan says |
@@ -146,6 +148,7 @@ python -m venv .venv
 | `capscan/analysis/` | The scan: rules, references, crossings, transitions, existing caps, placement, values, heat map |
 | `capscan/report/` | The 2D map, the 3D scene, and the HTML / PDF reports |
 | `capscan/gui/` | The window (Qt, pyvista, matplotlib) |
+| `CHANGELOG.md` | What changed in each release; add a line under **Unreleased** with each change |
 | `tests/` | pytest. `tests/helpers/boards.py` builds boards with known answers; `kicad_fake.py` answers like each KiCad release |
 
 ## License
