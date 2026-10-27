@@ -150,6 +150,13 @@ python -m venv .venv
 | `capscan/gui/` | The window (Qt, pyvista, matplotlib) |
 | `CHANGELOG.md` | What changed in each release; add a line under **Unreleased** with each change |
 | `tests/` | pytest. `tests/helpers/boards.py` builds boards with known answers; `kicad_fake.py` answers like each KiCad release |
+| `.github/` | CI; `release.yml` attaches `CapScan-<tag>.zip` to each release; `stats.yml` publishes the clone and download counts the About dialog shows |
+
+Publishing a GitHub release attaches the plugin zip to it (GitHub counts downloads of
+attached files only, not of the automatic source archives). The daily **Stats** workflow
+writes `stats.json` to the `stats` branch; its clone counts need a `TRAFFIC_TOKEN`
+repository secret (a fine-grained token for this repo with Administration: read-only).
+Without it the workflow still counts release downloads and warns about the clones.
 
 ## License
 

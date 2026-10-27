@@ -14,6 +14,8 @@ a release renames that heading to its version and date.
   changelog and issue tracker, the KiCad, Python and package versions it runs on, the
   session log, and buttons to copy the version info, open the log folder and check GitHub
   for a newer release (#5).
+- The About dialog shows how many times CapScan has been cloned and its releases
+  downloaded, from a daily GitHub Actions workflow (#12).
 
 ### Changed
 - The HTML report lists every capacitor between two planes, including decoupling caps no
