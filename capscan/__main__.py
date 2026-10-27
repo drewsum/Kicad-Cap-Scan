@@ -51,7 +51,7 @@ def main(argv=None) -> int:
         r = run_scan(snap, settings, progress=ProgressReporter())
         print(r.counts())
         for c in r.caps:
-            print(f"{c.id}: {c.value} {c.voltage_v:g}V {c.package} {c.net_a}/{c.net_b} at "
+            print(f"{c.id}: {c.amount} {c.voltage_v:g}V {c.package} {c.net_a}/{c.net_b} at "
                   f"({c.position[0]:.2f}, {c.position[1]:.2f}) {c.side}, "
                   f"for {', '.join(c.signals)}")
         if args.html:

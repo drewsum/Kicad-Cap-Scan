@@ -17,6 +17,7 @@ from capscan.analysis.results import (
     EXISTING, NEW_CAP, SPLIT, UNFIXABLE, VIA_CAP, VIA_STITCH, ScanResult,
 )
 from capscan.analysis.rules import DESCRIPTIONS
+from capscan.analysis.values import part_basis
 from capscan.model.board import BoardSnapshot
 from capscan.model.stackup import summary as stackup_summary
 from capscan.report.maps import LIGHT, MapData, map_png
@@ -121,10 +122,10 @@ def _tiles(r: ScanResult) -> str:
 
 def _cap_rows(r: ScanResult):
     for c in r.caps:
-        yield (c.id, c.value, c.dielectric, c.package, f"{c.voltage_v:g} V", c.net_a, c.net_b,
-               _mm(c.position[0]), _mm(c.position[1]), c.side, f"{c.angle_deg:g}°",
+        yield (c.id, c.count, c.value, c.dielectric, c.package, f"{c.voltage_v:g} V", c.net_a,
+               c.net_b, _mm(c.position[0]), _mm(c.position[1]), c.side, f"{c.angle_deg:g}°",
                ", ".join(r.layer_name(l) for l in c.ref_layers), len(c.signals),
-               ", ".join(c.signals), ("crowded: place by hand" if c.crowded else ""))
+               ", ".join(c.signals), c.note)
 
 
 def _crossing_rows(r: ScanResult):
@@ -143,6 +144,10 @@ def _transition_rows(r: ScanResult):
         yield (t.id, t.net, r.layer_name(t.from_layer), r.layer_name(t.to_layer), refs(t.from_refs),
                refs(t.to_refs), _mm(t.position[0]), _mm(t.position[1]), need,
                _status(t.status), t.covered_by, ", ".join(t.decoupling))
+
+
+SIGNAL_HEAD = ["Signal", "Edge ps", "Z0 Ω", "Routing layers", "Reference layers",
+               "Split crossings", "Plane-changing vias", "Voids", "Returned by"]
 
 
 def _signal_rows(r: ScanResult):
@@ -166,7 +171,8 @@ def _signal_rows(r: ScanResult):
             e["caps"].add(t.covered_by)
     for net in sorted(by):
         e = by[net]
-        yield (net, ", ".join(sorted(e["layers"])), ", ".join(sorted(e["refs"])), e["splits"],
+        yield (net, f"{r.settings.edge_rate_of(net):g}", f"{r.settings.impedance_of(net):g}",
+               ", ".join(sorted(e["layers"])), ", ".join(sorted(e["refs"])), e["splits"],
                e["vias"], e["voids"], ", ".join(sorted(e["caps"])))
 
 
@@ -273,8 +279,9 @@ def report_html(snap: BoardSnapshot, r: ScanResult, pdf: bool = False,
     title = f"CapScan report: {r.board_name}"
     meta = (f"Scanned {_e(r.created)} with CapScan {__version__}"
             + (f", KiCad {_e(r.kicad_version)}" if r.kicad_version else "")
-            + f". Every signal taken as fast digital ({r.settings.edge_rate_ps:g} ps edges, "
-            f"knee {r.settings.knee_ghz:.1f} GHz).")
+            + f". Signals taken as fast digital: {r.settings.edge_rate_ps:g} ps edges "
+            f"(knee {r.settings.knee_ghz:.1f} GHz) on {r.settings.trace_impedance_ohm:g} Ω "
+            "unless set per net.")
     out: List[str] = [f"<h1>{_e(title)}</h1><div class='meta'>{meta}</div>"]
     if not pdf:
         out.append("<nav><a href='#summary'>Summary</a><a href='#caps'>Stitching caps</a>"
@@ -306,10 +313,12 @@ def report_html(snap: BoardSnapshot, r: ScanResult, pdf: bool = False,
     out.append("<h2 id='caps'>Stitching capacitors to add</h2>")
     out.append("<p class='note'>Place each between the two nets, pads across the split, with "
                "a via from each pad straight down to its plane. X / Y are KiCad board "
-               "coordinates in mm; angle is the footprint rotation.</p>")
-    out.append(_table(["Cap", "Value", "Dielectric", "Package", "Rating", "Net A", "Net B",
-                       "X", "Y", "Side", "Angle", "Planes on", "Signals", "Signal nets",
-                       "Note"], _cap_rows(r), left=(0, 1, 2, 3, 5, 6, 9, 11, 13, 14)))
+               "coordinates in mm; angle is the footprint rotation. "
+               f"{_e(part_basis(r.settings))}</p>")
+    out.append(_table(["Cap", "Qty", "Value", "Dielectric", "Package", "Rating", "Net A",
+                       "Net B", "X", "Y", "Side", "Angle", "Planes on", "Signals",
+                       "Signal nets", "Note"], _cap_rows(r),
+                      left=(0, 2, 3, 4, 6, 7, 10, 12, 14, 15)))
     if r.stitch_vias:
         out.append("<h3>Return vias to add</h3>")
         out.append(_table(["Via", "Net", "X", "Y", "Between", "For"],
@@ -318,9 +327,7 @@ def report_html(snap: BoardSnapshot, r: ScanResult, pdf: bool = False,
                            for v in r.stitch_vias], left=(0, 1, 4, 5)))
 
     out.append("<h2 id='signals'>Signals crossing plane splits</h2>")
-    out.append(_table(["Signal", "Routing layers", "Reference layers", "Split crossings",
-                       "Plane-changing vias", "Voids", "Returned by"], _signal_rows(r),
-                      left=(0, 1, 2, 6)))
+    out.append(_table(SIGNAL_HEAD, _signal_rows(r), left=(0, 3, 4, 8)))
     out.append("<h2 id='crossings'>Every crossing</h2>")
     rows = list(_crossing_rows(r))
     head = ["Id", "Kind", "Signal", "Layer", "Reference", "Net before", "Net after", "X", "Y",

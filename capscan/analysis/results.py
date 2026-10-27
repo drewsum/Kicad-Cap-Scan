@@ -96,6 +96,12 @@ class StitchCap:
     ref_layers: List[int] = field(default_factory=list)
     crowded: bool = False           # no free spot found; place by hand near here
     note: str = ""
+    count: int = 1                  # parts in parallel at this spot, each with its own vias
+
+    @property
+    def amount(self) -> str:
+        """The value, with how many when more than one: "2 x 100nF"."""
+        return f"{self.count} x {self.value}" if self.count > 1 else self.value
 
 
 @dataclass

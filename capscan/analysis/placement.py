@@ -26,8 +26,8 @@ from capscan.analysis.results import (
     EXISTING, NEW_CAP, OTHER_PLANE, SPLIT, UNFIXABLE, VIA_CAP, Crossing, ExistingCap, StitchCap,
     Transition,
 )
-from capscan.analysis.rules import ScanSettings
-from capscan.analysis.values import voltage_rating
+from capscan.analysis.rules import PACKAGES, ScanSettings
+from capscan.analysis.values import choose_part
 from capscan.geometry.copper import poly_to_shapely
 from capscan.model.board import BoardSnapshot
 from capscan.model.layers import B_CU, F_CU
@@ -139,8 +139,9 @@ class Obstacles:
         return len(self.tree.query(shape, predicate="intersects")) == 0
 
 
-def cap_outline(pos: Point, angle_deg: float, settings: ScanSettings) -> Polygon:
-    l, w = settings.cap_body_mm
+def cap_outline(pos: Point, angle_deg: float, settings: ScanSettings,
+                body_mm: Tuple[float, float] = (1.0, 0.5)) -> Polygon:
+    l, w = body_mm
     c = settings.placement_clearance_mm
     r = box(-l / 2 - c, -w / 2 - c, l / 2 + c, w / 2 + c)
     # KiCad angles turn counter-clockwise on screen, which with y down is clockwise here.
@@ -164,7 +165,7 @@ def _angle(split_dir: Optional[Point]) -> float:
 
 
 def _spot(center: Point, members: List[Need], angle: float, obstacles: Obstacles,
-          settings: ScanSettings, along: Point) -> Optional[Point]:
+          settings: ScanSettings, along: Point, body_mm: Tuple[float, float]) -> Optional[Point]:
     """The free spot nearest ``center`` from which every member is within reach."""
     reach = min(n.limit for n in members)
     perp = (-along[1], along[0])
@@ -180,7 +181,7 @@ def _spot(center: Point, members: List[Need], angle: float, obstacles: Obstacles
         p = (center[0] + a * along[0] + b * perp[0], center[1] + a * along[1] + b * perp[1])
         if any(_dist(p, m.position) > m.limit for m in members):
             continue
-        if obstacles.free(cap_outline(p, angle, settings)):
+        if obstacles.free(cap_outline(p, angle, settings, body_mm)):
             return (round(float(p[0]), 3), round(float(p[1]), 3))
     return None
 
@@ -221,31 +222,35 @@ def place_caps(needs: List[Need], snap: BoardSnapshot, refs: References,
             layers = sorted({l for m in members for l in m.ref_layers})
             side = _side(refs, snap, layers)
             along = split_dir or (1.0, 0.0)
-            spot = _spot(center, members, angle, obs(side), settings, along)
+            part = choose_part(pair[0], pair[1], settings,
+                               sorted({m.item.net for m in members}))
+            body = PACKAGES[part.package].body_mm
+            spot = _spot(center, members, angle, obs(side), settings, along, body)
             crowded = False
             if spot is None:
                 other = "bottom" if side == "top" else "top"
-                spot = _spot(center, members, angle, obs(other), settings, along)
+                spot = _spot(center, members, angle, obs(other), settings, along, body)
                 if spot is not None:
                     side = other
                 else:
                     spot, crowded = (round(center[0], 3), round(center[1], 3)), True
             cap = StitchCap(
                 id=f"CS{len(caps) + 1}", net_a=pair[0], net_b=pair[1],
-                value=settings.cap_value, dielectric=settings.cap_dielectric,
-                package=settings.cap_package,
-                voltage_v=voltage_rating(pair[0], pair[1], settings),
+                value=part.value, dielectric=part.dielectric, package=part.package,
+                voltage_v=part.voltage_v, count=part.count,
                 position=spot, angle_deg=angle, side=side,
                 serves=[m.item.id for m in members],
                 signals=sorted({m.item.net for m in members}), ref_layers=layers,
                 crowded=crowded,
-                note="No free spot within reach: place by hand near here" if crowded else "")
+                note="; ".join(n for n in (
+                    "No free spot within reach: place by hand near here" if crowded else "",
+                    part.note) if n))
             caps.append(cap)
             for m in members:
                 m.served_by = cap.id
                 m.item.status, m.item.covered_by = NEW_CAP, cap.id
             o = obs(side)          # the new part is an obstacle for the next ones
-            o.geoms.append(cap_outline(spot, angle, settings))
+            o.geoms.append(cap_outline(spot, angle, settings, body))
             o.tree = STRtree(o.geoms)
             served = {id(m) for m in members}
             left = [n for n in left if id(n) not in served]

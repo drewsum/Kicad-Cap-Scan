@@ -21,6 +21,15 @@ a release renames that heading to its version and date.
   itself once the window is open. The About dialog's icon is animated too (#4).
 
 ### Changed
+- Each stitching cap's package and value are picked from the edge rate; there is no
+  package to set. Faster edges get smaller packages, or several 0402s in parallel (a new
+  Qty column); the value is the largest X7R that package stocks at the voltage rating. The
+  reports say why the part was chosen (#13).
+- Each net in the net list has its own edge rate and trace impedance, 100 ps and 50 Ω
+  unless set. Double-click to set one, or set every net the filter shows at once; they are
+  remembered per board. A shared cap takes the package its fastest signal needs. The
+  defaults are at the top of the settings, and the Signals tables show each net's speed
+  (#13).
 - The HTML report lists every capacitor between two planes, including decoupling caps no
   crossing reached; before, a cap appeared only once a crossing credited or flagged it (#8).
 - A capacitor is decoupling when one of its pads is within reach of an IC pin on the same

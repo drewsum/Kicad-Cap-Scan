@@ -13,8 +13,9 @@ what value and voltage rating, and which two plane nets each one bridges.
 
 The only setup is choosing which nets to scan. Tick **Scan all signal nets**, or pick nets
 from the list (a filter box finds `USB`, `DDR*` and so on). Every net scanned is taken to be
-a fast digital signal (100 ps edges), and every default leans towards more stitching rather
-than less: a basic utility that keeps every signal's return path next to it.
+a fast digital signal (100 ps edges on 50 Ω traces) unless you give it its own edge rate and
+impedance, and every default leans towards more stitching rather than less: a basic utility
+that keeps every signal's return path next to it.
 
 What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 
@@ -91,8 +92,11 @@ Double-click any row to find it on the map and select that net in KiCad.
    at once, in 3D and 2D: the stackup, every plane, and the signal routing, with the nets
    you pick highlighted. It also lists the board's signal nets (planes and supplies are left out) under *Nets to scan*. Tick **Scan all
    signal nets**, or filter the list and tick the nets you want (*Select shown* ticks every
-   net the filter shows), then click **Scan board**. The nets you pick are remembered for
-   that board and ticked again next time; nothing is scanned until you click **Scan board**.
+   net the filter shows), then click **Scan board**. Each net's **Edge ps** and **Z0 Ω**
+   show the defaults in grey. Double-click one to give that net its own, or filter to a
+   bus, enter an edge rate and impedance under the list and click *Set shown*. *Default*
+   puts the nets shown back on the defaults. The nets you pick and their speeds are
+   remembered for that board; nothing is scanned until you click **Scan board**.
    The scan reads the zone fills as they are, and the fills decide where the planes are:
    tick *Refill zones before scanning* (or press B in KiCad) if they may be stale.
 2. Read the summary on the left. The **Stitching Caps** tab is the list of parts to add.
@@ -128,9 +132,14 @@ the board as `<board>.capscan.json.gz`.
    placed greedily where it reaches the most uncovered signals, two at most. It goes on the
    board side nearer both planes, clear of other copper and parts, with its pads across the
    split.
-6. **Value.** 100 nF X7R 0402. The voltage rating is at least twice the voltage between the
-   two nets as their names give it (3V3, 1V8, +5V, VBUS), and never below 16 V. Nets whose
-   voltage the name does not give get a 50 V rating.
+6. **Part.** Picked for you; there is no package to set. The edge rate and impedance of
+   the fastest signal a cap returns (100 ps on 50 Ω unless set for that net) set how much
+   mounted inductance it may have. CapScan takes the largest of
+   0402 / 0603 / 0805 within that budget, or several 0402s in parallel for faster edges. The
+   value is the largest X7R part that package stocks at the voltage rating, up to 100 nF.
+   The voltage rating is at least twice the voltage between the two nets as their names
+   give it (3V3, 1V8, +5V, VBUS), and never below 16 V. Nets whose voltage the name does not
+   give get a 50 V rating. See [docs/research.md](docs/research.md#value-and-package).
 
 ## Development
 

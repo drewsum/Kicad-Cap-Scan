@@ -100,9 +100,7 @@ def test_filter_and_select_shown(app, make_window):
     w = make_window()
     picker = w.settings_panel.nets
     picker.filter.setText("d[02]")
-    shown = [picker.list.item(i).text() for i in range(picker.list.count())
-             if not picker.list.item(i).isHidden()]
-    assert shown == ["D0", "D2"]
+    assert picker.shown() == ["D0", "D2"]
     picker.select_shown.click()
     assert picker.selected() == ["D0", "D2"]
     picker.filter.setText("1")
@@ -116,8 +114,34 @@ def test_filter_and_select_shown(app, make_window):
 def test_all_nets_greys_out_the_list(app, make_window):
     picker = make_window().settings_panel.nets
     picker.set_scan_all(True)
-    assert not picker.list.isEnabled() and not picker.filter.isEnabled()
+    assert not picker.select_shown.isEnabled() and not picker.clear_shown.isEnabled()
+    assert picker.list.isEnabled()          # speeds still apply to every net
     assert "All 3 signal nets" in picker.count.text()
+
+
+def test_speed_per_net(app, make_window):
+    w = make_window()
+    panel, picker = w.settings_panel, w.settings_panel.nets
+    assert picker.speeds() == ({}, {})
+    assert picker.list.item(0, 1).text() == "100"                      # the default, in grey
+    picker.list.item(1, 1).setText("50")                               # D1 typed in
+    picker.filter.setText("D2")
+    picker.edge_spin.setValue(300)
+    picker.z0_spin.setValue(45)
+    picker.set_speed.click()
+    picker.filter.clear()
+    assert picker.speeds() == ({"D1": 50.0, "D2": 300.0}, {"D2": 45.0})
+    assert "2 with their own" in picker.count.text()
+    picker.list.item(1, 1).setText("")                                 # back to the default
+    assert picker.speeds()[0] == {"D2": 300.0}
+    panel._fields["edge_rate_ps"].setValue(80)
+    assert picker.list.item(0, 1).text() == "80"                       # defaults follow
+    s = panel.value()
+    assert (s.edge_rate_ps, s.net_edge_rate_ps, s.net_impedance_ohm) == \
+        (80.0, {"D2": 300.0}, {"D2": 45.0})
+    picker.filter.setText("D2")
+    picker.reset_speed.click()
+    assert picker.speeds() == ({}, {})
 
 
 def test_double_click_highlights_on_the_map(app, make_window):

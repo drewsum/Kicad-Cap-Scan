@@ -1,5 +1,6 @@
 """The scan on boards with a known answer (tests/helpers/boards.py)."""
 
+import json
 import math
 
 import pytest
@@ -12,7 +13,7 @@ from capscan.analysis.results import (
 )
 from capscan.analysis.rules import ScanSettings
 from boards import scan as run_scan
-from capscan.analysis.values import net_voltage, voltage_rating
+from capscan.analysis.values import choose_part, net_voltage, voltage_rating
 
 
 def crossing_bus(ys=(5.0, 6.0, 7.0), layer=B_CU, prefix="D"):
@@ -292,6 +293,69 @@ def test_voltage_rating():
     assert voltage_rating("GND", "12V", s) == 25.0
     assert voltage_rating("GND", "+24V", s) == 50.0
     assert voltage_rating("GND", "VCC", s) == 50.0       # unknown voltage
+
+
+@pytest.mark.parametrize("edge_ps, package, count", [(50, "0402", 2), (100, "0402", 1),
+                                                     (120, "0603", 1), (150, "0805", 1),
+                                                     (1000, "0805", 1)])
+def test_package_follows_the_edge_rate(edge_ps, package, count):
+    part = choose_part("GND", "+3V3", ScanSettings(edge_rate_ps=edge_ps))
+    assert (part.package, part.count, part.value, part.voltage_v) ==         (package, count, "100nF", 16.0)
+    assert ("in parallel" in part.note) == (count > 1)
+
+
+def test_inductance_budget():
+    s = ScanSettings()
+    assert s.max_cap_inductance_nh() == pytest.approx(1.136, abs=1e-3)  # 0.25*100 ps*50/1.1
+    assert s.min_cap_value_f() == pytest.approx(0.4e-9)                 # 10 nH / (5 ohm)^2
+
+
+def test_each_net_has_its_own_speed_and_the_fastest_picks_the_package():
+    s = ScanSettings(net_edge_rate_ps={"USB_DP": 50.0, "I2C_SCL": 1000.0},
+                     net_impedance_ohm={"USB_DP": 45.0})
+    assert (s.edge_rate_of("USB_DP"), s.impedance_of("USB_DP")) == (50.0, 45.0)
+    assert (s.edge_rate_of("D0"), s.impedance_of("D0")) == (100.0, 50.0)      # the defaults
+    assert choose_part("GND", "+3V3", s, ["I2C_SCL"]).package == "0805"
+    assert choose_part("GND", "+3V3", s, ["D0"]).package == "0402"
+    part = choose_part("GND", "+3V3", s, ["I2C_SCL", "USB_DP"])               # 0.51 nH
+    assert (part.package, part.count) == ("0402", 2)
+    assert "50 ps edge on USB_DP" in part.note
+
+
+def test_value_follows_the_package_and_rating():
+    part = choose_part("GND", "48V", ScanSettings())    # 100 V: an 0402 only stocks 1 nF
+    assert (part.package, part.value, part.voltage_v, part.note) == ("0402", "1nF", 100.0, "")
+    low_z = ScanSettings(trace_impedance_ohm=25.0)      # needs 1.6 nF: too much for an 0402
+    part = choose_part("GND", "48V", low_z)
+    assert (part.package, part.value) == ("0603", "100nF")
+    assert "does not reach 100 V" in part.note
+    part = choose_part("GND", "48V", ScanSettings(trace_impedance_ohm=2.0))     # 250 nF
+    assert "check availability" in part.note
+
+
+def test_value_can_be_set_but_not_the_package():
+    s = ScanSettings(cap_value="10nF", edge_rate_ps=50)
+    part = choose_part("GND", "+3V3", s)
+    assert (part.value, part.package, part.count) == ("10nF", "0402", 2)
+    old = ScanSettings.from_dict({"cap_value": "100nF", "cap_package": "0603"})
+    assert old.cap_value == ""          # an old default, not a choice
+
+
+def test_scan_uses_the_picked_part():
+    r = run_scan(_via_board(), ScanSettings(edge_rate_ps=50.0))
+    (cap,) = r.caps
+    assert (cap.package, cap.count, cap.amount) == ("0402", 2, "2 x 100nF")
+    back = ScanResult.from_dict(json.loads(json.dumps(r.to_dict())))
+    assert back.caps[0].count == 2
+
+
+def test_scan_uses_each_nets_own_speed():
+    slow = run_scan(_via_board(), ScanSettings(net_edge_rate_ps={"SPI_CLK": 1000.0}))
+    assert slow.caps[0].package == "0805"
+    back = ScanResult.from_dict(json.loads(json.dumps(slow.to_dict())))
+    assert back.settings.edge_rate_of("SPI_CLK") == 1000.0
+    fast = run_scan(_via_board(), ScanSettings(net_impedance_ohm={"SPI_CLK": 25.0}))
+    assert (fast.caps[0].package, fast.caps[0].count) == ("0402", 2)      # 0.57 nH
 
 
 def test_heat_is_hottest_at_the_bus():

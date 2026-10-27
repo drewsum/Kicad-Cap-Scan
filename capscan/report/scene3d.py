@@ -95,7 +95,7 @@ def build_scene(data: MapData, zscale: float = 6.0) -> Scene:
     for c in r.caps:
         zz = thickness + 0.25 * zscale if c.side == "top" else -0.25 * zscale
         caps.append((c.id, np.array([c.position[0], -c.position[1], zz]), c.angle_deg,
-                     f"{c.id} {c.value} {c.voltage_v:g}V"))
+                     f"{c.id} {c.amount} {c.voltage_v:g}V"))
     vias = [(v.id, np.array([v.position[0], -v.position[1], thickness / 2]))
             for v in r.stitch_vias]
     return Scene(zscale=zscale, thickness=thickness, outline=outline, sheets=sheets,

@@ -24,6 +24,7 @@ from qtpy.QtWidgets import (
 from capscan import __version__
 from capscan.analysis.results import NEW_CAP, UNFIXABLE, VIA_CAP, ScanResult
 from capscan.analysis.rules import DESCRIPTIONS, ScanSettings
+from capscan.analysis.values import part_basis
 from capscan.gui import app as capscan_app
 from capscan.gui.board_map import BoardMap, HeatToggles
 from capscan.gui.docks import make_detachable
@@ -49,6 +50,7 @@ STATUS_COLORS = {NEW_CAP: "#ffc060", "existing cap": "#60d060", UNFIXABLE: "#ff6
 LOG_COLORS = {logging.WARNING: "#ffc060", logging.ERROR: "#ff8080"}
 SETTINGS_KEY = "scan_settings"
 NETS_KEY = "nets/"              # + board file name: the nets picked for that board
+SPEEDS_KEY = "speeds/"          # + board file name: edge rates and impedances set per net
 
 
 class _Item(QTableWidgetItem):
@@ -98,16 +100,17 @@ class SettingsPanel(QWidget):
     """The scan settings: the few that matter up top, every rule under Advanced."""
 
     BASIC = ("check_splits", "check_via_caps", "check_via_stitch", "check_voids",
-             "max_cap_distance_mm", "via_cap_distance_mm", "signals_per_cap", "cap_value",
-             "cap_package")
+             "edge_rate_ps", "trace_impedance_ohm", "max_cap_distance_mm",
+             "via_cap_distance_mm", "signals_per_cap")
 
     def __init__(self, settings: ScanSettings, parent=None):
         super().__init__(parent)
         self._fields = {}
         layout = QVBoxLayout(self)
-        intro = QLabel("Pick the nets to scan, or scan them all. Every net scanned is taken "
-                       "as a fast digital signal, and the defaults lean towards more "
-                       "stitching.")
+        intro = QLabel("Pick the nets to scan, or scan them all. Each net is taken as a fast "
+                       "digital signal with the default edge rate and impedance unless given "
+                       "its own (double-click a grey value); the fastest signal a cap returns "
+                       "picks its package.")
         intro.setWordWrap(True)
         intro.setStyleSheet(HINT)
         layout.addWidget(intro)
@@ -115,6 +118,7 @@ class SettingsPanel(QWidget):
         QVBoxLayout(nets_box).addWidget(NetPicker())
         self.nets: NetPicker = nets_box.layout().itemAt(0).widget()
         self.nets.set_scan_all(settings.scan_all_nets)
+        self.nets.set_defaults(settings.edge_rate_ps, settings.trace_impedance_ohm)
         layout.addWidget(nets_box, 1)
         basic = QFormLayout()
         layout.addLayout(basic)
@@ -133,6 +137,10 @@ class SettingsPanel(QWidget):
                 adv.addRow(label, w)
                 self._adv_widgets.append(w)
                 self._adv_widgets.append(adv.labelForField(w))
+        for name in ("edge_rate_ps", "trace_impedance_ohm"):
+            self._fields[name].valueChanged.connect(lambda _: self.nets.set_defaults(
+                self._fields["edge_rate_ps"].value(),
+                self._fields["trace_impedance_ohm"].value()))
         self.ignore = QLineEdit(", ".join(settings.ignore_nets))
         self.ignore.setPlaceholderText("e.g. TP*, LED_*")
         self.extra = QLineEdit(", ".join(settings.extra_plane_nets))
@@ -171,7 +179,7 @@ class SettingsPanel(QWidget):
         elif isinstance(value, float):
             w = QDoubleSpinBox()
             w.setDecimals(2)
-            w.setRange(0.0, 1000.0)
+            w.setRange(0.0, 100000.0)
             w.setSingleStep(0.1)
             w.setValue(value)
         else:
@@ -190,6 +198,9 @@ class SettingsPanel(QWidget):
         self.ignore.setText(", ".join(s.ignore_nets))
         self.extra.setText(", ".join(s.extra_plane_nets))
         self.nets.set_scan_all(s.scan_all_nets)      # the ticked nets belong to the board
+        self.nets.set_defaults(s.edge_rate_ps, s.trace_impedance_ohm)
+        if s.net_edge_rate_ps or s.net_impedance_ohm:
+            self.nets.set_speeds(s.net_edge_rate_ps, s.net_impedance_ohm)
 
     def value(self) -> ScanSettings:
         s = ScanSettings()
@@ -206,6 +217,7 @@ class SettingsPanel(QWidget):
         s.extra_plane_nets = split(self.extra.text())
         s.scan_all_nets = self.nets.scan_all()
         s.selected_nets = self.nets.selected()
+        s.net_edge_rate_ps, s.net_impedance_ohm = self.nets.speeds()
         return s
 
 
@@ -398,11 +410,14 @@ class MainWindow(QMainWindow):
 
     def _save_settings(self, s: ScanSettings):
         d = s.to_dict()
-        d.pop("selected_nets")
+        for k in ("selected_nets", "net_edge_rate_ps", "net_impedance_ohm"):
+            d.pop(k)
         self._qsettings.setValue(SETTINGS_KEY, json.dumps(d))
         name = self._board_name()
         if name:
             self._qsettings.setValue(NETS_KEY + name, json.dumps(s.selected_nets))
+            self._qsettings.setValue(SPEEDS_KEY + name, json.dumps(
+                {"edge_ps": s.net_edge_rate_ps, "impedance": s.net_impedance_ohm}))
 
     def _board_name(self) -> str:
         if self.snapshot is not None:
@@ -418,6 +433,16 @@ class MainWindow(QMainWindow):
             return list(json.loads(self._qsettings.value(NETS_KEY + name, "[]") or "[]"))
         except (ValueError, TypeError):
             return []
+
+    def _saved_speeds(self):
+        """The edge rates and impedances set per net for this board."""
+        name = self._board_name()
+        try:
+            d = json.loads(self._qsettings.value(SPEEDS_KEY + name, "{}") or "{}")
+            return ({k: float(v) for k, v in d.get("edge_ps", {}).items()},
+                    {k: float(v) for k, v in d.get("impedance", {}).items()})
+        except (ValueError, TypeError, AttributeError):
+            return {}, {}
 
     # ------------------------------------------------------------------ the net list
     def load_board(self):
@@ -442,7 +467,8 @@ class MainWindow(QMainWindow):
             snap, preview = out
             self.snapshot, self._preview = snap, preview
             self.settings_panel.nets.blockSignals(True)
-            self.settings_panel.nets.set_nets(preview.candidate_nets, self._saved_nets())
+            self.settings_panel.nets.set_nets(preview.candidate_nets, self._saved_nets(),
+                                              *self._saved_speeds())
             self.settings_panel.nets.blockSignals(False)
             self._show_preview()
 
@@ -648,6 +674,7 @@ class MainWindow(QMainWindow):
         if c["decoupling_flags"]:
             lines.append(f"<span style='{ERROR}'>{c['decoupling_flags']} returns would use "
                          "decoupling caps</span>")
+        lines.append(f"<span style='{HINT}'>{part_basis(r.settings)}</span>")
         for w in r.warnings:
             lines.append(f"<span style='color:#ffc060'>{w}</span>")
         self.summary_label.setText("<br>".join(lines))
@@ -655,16 +682,15 @@ class MainWindow(QMainWindow):
     def _fill_tables(self, r: ScanResult):
         from capscan.report import html as rep
         fill_table(self.caps_table,
-                   ["Cap", "Value", "Dielectric", "Package", "Rating", "Net A", "Net B", "X",
-                    "Y", "Side", "Angle", "Planes on", "Signals", "Signal nets", "Note"],
-                   [(c.id, c.value, c.dielectric, c.package, f"{c.voltage_v:g} V", c.net_a,
+                   ["Cap", "Qty", "Value", "Dielectric", "Package", "Rating", "Net A", "Net B",
+                    "X", "Y", "Side", "Angle", "Planes on", "Signals", "Signal nets", "Note"],
+                   [(c.id, c.count, c.value, c.dielectric, c.package, f"{c.voltage_v:g} V", c.net_a,
                      c.net_b, c.position[0], c.position[1], c.side, c.angle_deg,
                      ", ".join(r.layer_name(l) for l in c.ref_layers), len(c.signals),
                      ", ".join(c.signals), c.note) for c in r.caps],
                    ids=[c.id for c in r.caps])
         fill_table(self.signals_table,
-                   ["Signal", "Routing layers", "Reference layers", "Split crossings",
-                    "Plane-changing vias", "Voids", "Returned by"], list(rep._signal_rows(r)))
+                   rep.SIGNAL_HEAD, list(rep._signal_rows(r)))
         fill_table(self.crossings_table,
                    ["Id", "Kind", "Signal", "Layer", "Reference", "Net before", "Net after", "X",
                     "Y", "Gap mm", "h mm", "Severity", "Fix", "By", "Decoupling caps"],
