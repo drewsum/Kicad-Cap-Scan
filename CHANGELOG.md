@@ -16,6 +16,9 @@ a release renames that heading to its version and date.
   for a newer release (#5).
 - The About dialog shows how many times CapScan has been cloned and its releases
   downloaded, from a daily GitHub Actions workflow (#12).
+- A welcome screen while CapScan starts, with an animated logo, the version and what it
+  runs on, and what it is doing (connecting to KiCad, loading its packages); it closes
+  itself once the window is open. The About dialog's icon is animated too (#4).
 
 ### Changed
 - The HTML report lists every capacitor between two planes, including decoupling caps no

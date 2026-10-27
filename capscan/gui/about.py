@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 from qtpy.QtCore import QObject, QSettings, QSize, Qt, QUrl, Signal
-from qtpy.QtGui import QDesktopServices, QGuiApplication, QPixmap
+from qtpy.QtGui import QDesktopServices, QGuiApplication, QMovie, QPixmap
 from qtpy.QtWidgets import (
     QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
@@ -52,6 +52,28 @@ def icon_path() -> Optional[Path]:
     """The plugin icon, which lives beside the package in the plugin folder."""
     p = _ROOT / "resources" / "capscan_256.png"
     return p if p.is_file() else None
+
+
+def animated_icon_path() -> Optional[Path]:
+    """The icon as a loop: a signal crosses the split and the stitching capacitor drops in
+    (#4; drawn by ``tools/make_logo_gif.py``)."""
+    p = _ROOT / "resources" / "capscan.gif"
+    return p if p.is_file() else None
+
+
+def animate(label: QLabel, size: int, parent: QObject) -> Optional[QMovie]:
+    """Play the animated icon in ``label``, or None to fall back to the still one: the GIF
+    can be missing, and some Qt builds ship without the GIF image plugin."""
+    path = animated_icon_path()
+    if path is None:
+        return None
+    movie = QMovie(str(path), parent=parent)
+    if not movie.isValid():
+        return None
+    movie.setScaledSize(QSize(size, size))
+    label.setMovie(movie)
+    movie.start()
+    return movie
 
 
 def help_path() -> Path:
@@ -209,8 +231,10 @@ class AboutDialog(QDialog):
         self.kicad_version = kicad_version
 
         icon = QLabel(self)
+        icon.setFixedSize(ICON_SIZE, ICON_SIZE)
+        self.movie = animate(icon, ICON_SIZE, self)
         path = icon_path()
-        if path is not None:
+        if self.movie is None and path is not None:
             icon.setPixmap(QPixmap(str(path)).scaled(
                 QSize(ICON_SIZE, ICON_SIZE), Qt.KeepAspectRatio, Qt.SmoothTransformation))
         icon.setAlignment(Qt.AlignTop)
@@ -270,7 +294,7 @@ class AboutDialog(QDialog):
         col.addStretch(1)
 
         top = QHBoxLayout()
-        top.addWidget(icon)
+        top.addWidget(icon, 0, Qt.AlignTop)
         top.addSpacing(12)
         top.addLayout(col, 1)
 

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="resources/capscan.gif" alt="CapScan logo" width="128">
+</p>
+
 # CapScan
 
 **Where to put stitching capacitors across plane splits, for KiCad 9 and 10.**
@@ -148,6 +152,7 @@ python -m venv .venv
 | `capscan/analysis/` | The scan: rules, references, crossings, transitions, existing caps, placement, values, heat map |
 | `capscan/report/` | The 2D map, the 3D scene, and the HTML / PDF reports |
 | `capscan/gui/` | The window (Qt, pyvista, matplotlib) |
+| `resources/` | The icons, and `capscan.gif`, the animated logo (`tools/make_logo_gif.py` draws it) |
 | `CHANGELOG.md` | What changed in each release; add a line under **Unreleased** with each change |
 | `tests/` | pytest. `tests/helpers/boards.py` builds boards with known answers; `kicad_fake.py` answers like each KiCad release |
 | `.github/` | CI; `release.yml` attaches `CapScan-<tag>.zip` to each release; `stats.yml` publishes the clone and download counts the About dialog shows |

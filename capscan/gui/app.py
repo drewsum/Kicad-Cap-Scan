@@ -311,11 +311,84 @@ def _refocus(win) -> None:
         bring_to_front(win)
 
 
-def run(kicad=None, board=None, snapshot=None) -> int:
+def start_splash():
+    """The QApplication, and the welcome screen shown on it (None if it cannot be), held
+    open until :func:`run` has opened the main window (#4). Shown before anything slow, so
+    CapScan answers the click at once."""
+    from capscan.gui.splash import show_splash
+    app = make_app()
+    splash = show_splash(app)
+    if splash is not None:
+        splash.hold()
+    return app, splash
+
+
+def set_status(splash, text: str) -> None:
+    """Say on the welcome screen what CapScan is doing."""
+    log.info("Starting: %s", text)
+    if splash is not None:
+        try:
+            splash.set_status(text)
+            from qtpy.QtWidgets import QApplication
+            QApplication.processEvents()
+        except RuntimeError:      # closed by a click; its widgets are gone
+            pass
+
+
+# What the main window needs, slowest first, with what the welcome screen says meanwhile.
+# A first start after a reboot reads these thousands of files from a cold disk.
+_PRELOAD = (
+    ("Loading NumPy and Shapely…", ("numpy", "shapely", "shapely.ops")),
+    ("Loading the 3D viewer…", ("pyvista", "pyvista.plotting", "matplotlib.figure")),
+    ("Loading the scanner…", ("capscan.analysis.scan", "capscan.report.maps",
+                              "capscan.report.scene3d")),
+)
+
+
+def preload(splash=None, preload=_PRELOAD) -> None:
+    """Import the main window's packages on a thread, keeping the welcome screen painted
+    and animated (and Windows from calling CapScan not responding) meanwhile. None of them
+    touch Qt. A package that fails here is left for the main window's own import to
+    report, on the UI thread. Copied from KiPI."""
+    import importlib
+    from qtpy.QtWidgets import QApplication
+
+    stage = [0]
+
+    def load():
+        for i, (_, modules) in enumerate(preload):
+            stage[0] = i
+            for m in modules:
+                try:
+                    importlib.import_module(m)
+                except Exception:  # noqa: BLE001 - imported again where it is used
+                    log.debug("Preloading %s failed", m, exc_info=True)
+
+    t0 = time.perf_counter()
+    set_status(splash, preload[0][0])
+    thread = threading.Thread(target=load, name="capscan-preload", daemon=True)
+    thread.start()
+    shown = 0
+    while thread.is_alive():
+        if stage[0] != shown:
+            shown = stage[0]
+            set_status(splash, preload[shown][0])
+        QApplication.processEvents()
+        thread.join(0.03)
+    log.info("Loaded CapScan's packages in %.1f s", time.perf_counter() - t0)
+
+
+def run(kicad=None, board=None, snapshot=None, splash=False) -> int:
     """Show the main window until it is closed. ``kicad`` / ``board`` are the live kipy
     connection the board is read from; ``snapshot`` opens a saved board instead (tests and
-    development)."""
-    app = make_app()
+    development). ``splash`` is the welcome screen from :func:`start_splash` if one was
+    shown already."""
+    if splash is False:
+        app, splash = start_splash()
+    else:
+        app = make_app()
+    preload(splash)
+    set_status(splash, "Opening the window…")
     from capscan.gui.main_window import MainWindow
 
     win = MainWindow(kicad=kicad, board=board, snapshot=snapshot)
@@ -323,6 +396,12 @@ def run(kicad=None, board=None, snapshot=None) -> int:
     from qtpy.QtCore import QTimer
     QTimer.singleShot(300, lambda: _refocus(win))
     log.info("Window open %.1f s after CapScan started", time.monotonic() - STARTED)
+    if splash is not None and splash.isVisible():
+        splash.set_status("Ready")
+        splash.raise_()     # over the new window until its loop has played
+        # Closing the splash hands the focus back to whatever is under it; keep it here.
+        splash.closed.connect(lambda: _refocus(win))
+        splash.release()    # closes it now if it has played through, as starting was slow
     code = app.exec()
     task = getattr(win, "_task", None)
     if task is not None and task.isRunning():
