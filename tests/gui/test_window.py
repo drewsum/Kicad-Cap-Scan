@@ -196,3 +196,15 @@ def test_heat_tick_boxes_pick_the_heat_shown_on_both_tabs(app, make_window):
     w.heat_3d.boxes[SPLIT].setChecked(True)                 # and back, on the 3D tab
     assert w.map.heat.boxes[SPLIT].isChecked()
     assert w._data.track_heat == MapData(w.snapshot, w.result).track_heat   # all, as scanned
+
+
+def test_bring_to_front_restores_and_forces_the_foreground(app, make_window, monkeypatch):
+    from capscan.gui import app as capscan_app
+    w = make_window()
+    calls = []
+    monkeypatch.setattr(capscan_app.sys, "platform", "win32")
+    monkeypatch.setattr(capscan_app, "_win32_foreground", calls.append)
+    w.showMinimized()
+    capscan_app.bring_to_front(w)
+    assert w.isVisible() and not w.isMinimized()
+    assert calls == [int(w.winId())]

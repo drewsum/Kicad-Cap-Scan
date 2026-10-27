@@ -259,10 +259,56 @@ def make_app():
 def bring_to_front(win) -> None:
     """Show ``win`` over KiCad, which otherwise keeps the focus it had when it started us."""
     from qtpy.QtCore import Qt
-    win.show()
+    if win.isMinimized():
+        win.showNormal()
     win.setWindowState((win.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive)
+    win.show()
     win.raise_()
     win.activateWindow()
+    if sys.platform == "win32":
+        try:
+            _win32_foreground(int(win.winId()))
+        except Exception:  # noqa: BLE001 - raise_() above is the fallback
+            log.debug("Could not force CapScan to the foreground", exc_info=True)
+
+
+def _win32_foreground(hwnd: int) -> None:
+    """Windows ignores activateWindow() from a process the user did not just click, which
+    is what CapScan is once it has started up behind KiCad (#3). Borrow the foreground
+    window's input queue for the hand-over; if Windows still refuses, at least put the
+    window on top of the others. Copied from KiPI (``kipi/gui/single_instance.py``)."""
+    import ctypes
+    from ctypes import wintypes
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetWindowThreadProcessId.argtypes = (wintypes.HWND, ctypes.c_void_p)
+    user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
+    user32.BringWindowToTop.argtypes = (wintypes.HWND,)
+    user32.SetWindowPos.argtypes = (wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_int, ctypes.c_uint)
+    fg = user32.GetForegroundWindow()
+    if fg == hwnd:
+        return
+    mine = kernel32.GetCurrentThreadId()
+    theirs = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+    attached = bool(theirs and theirs != mine and user32.AttachThreadInput(mine, theirs, True))
+    try:
+        user32.BringWindowToTop(hwnd)
+        ok = user32.SetForegroundWindow(hwnd)
+    finally:
+        if attached:
+            user32.AttachThreadInput(mine, theirs, False)
+    if not ok:
+        flags = 0x0001 | 0x0002 | 0x0040          # SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW
+        user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)     # HWND_TOPMOST
+        user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)     # HWND_NOTOPMOST
+
+
+def _refocus(win) -> None:
+    """Once the event loop runs, try again: KiCad can take the focus back while the
+    window is being built."""
+    if win.isVisible() and not win.isActiveWindow():
+        bring_to_front(win)
 
 
 def run(kicad=None, board=None, snapshot=None) -> int:
@@ -274,6 +320,8 @@ def run(kicad=None, board=None, snapshot=None) -> int:
 
     win = MainWindow(kicad=kicad, board=board, snapshot=snapshot)
     bring_to_front(win)
+    from qtpy.QtCore import QTimer
+    QTimer.singleShot(300, lambda: _refocus(win))
     log.info("Window open %.1f s after CapScan started", time.monotonic() - STARTED)
     code = app.exec()
     task = getattr(win, "_task", None)
