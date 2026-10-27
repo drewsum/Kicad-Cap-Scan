@@ -24,6 +24,9 @@ a release renames that heading to its version and date.
 
 ### Fixed
 - The window opens in front of KiCad on Windows instead of behind it (#3).
+- PDF report: the maps fit the page instead of being cut off at the right (their legends
+  were lost), and a heading moves to the next page with the start of what it heads, a
+  short note under it included, instead of ending a page on its own (#7).
 
 ## [0.1.0] - 2026-10-25
 

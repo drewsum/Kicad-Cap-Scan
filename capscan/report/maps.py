@@ -247,7 +247,8 @@ def map_png(data: MapData, ref_layer: Optional[int], theme: Theme = LIGHT,
         t.set_color(theme.text)
     fig.tight_layout()
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", facecolor=theme.face)
+    # Trimmed to the plot and its legend: no blank band above and below it on the page.
+    fig.savefig(buf, format="png", facecolor=theme.face, bbox_inches="tight", pad_inches=0.1)
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 

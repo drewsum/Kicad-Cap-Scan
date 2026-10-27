@@ -60,3 +60,45 @@ def test_pdf_report(tmp_path):
     data = write_pdf(snap, r, tmp_path / "r.pdf").read_bytes()
     assert data.startswith(b"%PDF") and len(data) > 20_000
     assert b"/EmbeddedFile" in data or (tmp_path / "r-3d.html").exists()
+
+
+def test_pdf_images_are_shrunk_to_fit_the_page():
+    """#7: a map wider or taller than the page was cut off at its edge."""
+    from capscan.report.pdf import fit_image
+    assert fit_image(1500, 1000, 150, 700, 900) == (700, 466)    # too wide
+    assert fit_image(1000, 3000, 96, 700, 900) == (300, 900)     # too tall
+    assert fit_image(300, 200, 150, 700, 900) == (192, 128)      # its own size
+    assert fit_image(300, 200, 0, 700, 900) == (300, 200)        # no dpi: 96
+
+
+def _first_page(doc, h, text):
+    block = doc.begin()
+    while block.isValid():
+        if block.text().startswith(text):
+            top = doc.documentLayout().blockBoundingRect(block).top()
+            return int(top // h)
+        block = block.next()
+
+
+def test_pdf_heading_and_note_go_over_with_their_table():
+    """#7: a heading and the note under it ended a page and their table began the next."""
+    pytest.importorskip("qtpy")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from qtpy.QtCore import QSizeF
+    from qtpy.QtGui import QTextDocument
+    from qtpy.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from capscan.report.pdf import _stranded_heading
+
+    h = 400
+    table = "<table><tr><th>Setting</th></tr><tr><td>row one</td></tr></table>"
+    for n in range(1, 40):
+        doc = QTextDocument()
+        doc.setPageSize(QSizeF(300, h))
+        doc.setHtml("<p>filler</p>" * n + "<h2>Method</h2><p>A short note.</p>" + table)
+        pages = [_first_page(doc, h, t) for t in ("Method", "A short note", "row one")]
+        if pages[0] == pages[1] != pages[2]:
+            break
+    else:
+        pytest.fail("no layout left the table alone on the next page")
+    assert _stranded_heading(doc, h) == 0

@@ -19,7 +19,9 @@ the HTML opens the attached file: Qt writes it as a link, which is made to open 
 (Acrobat's JavaScript, run by Acrobat, Foxit and PDF-XChange), with a paperclip beside it
 that opens the file in viewers without that (Firefox, Okular).
 
-A heading the page ends under starts the next page instead, with what it heads.
+A heading the page ends under starts the next page instead, with the start of what it
+heads: a table's first row, or a short note and the first line after it (#7). Images are
+scaled down to fit the page, so none is cut off at its right or bottom edge.
 
 Safe on a worker thread (QTextDocument and QPdfWriter need no window), but the application
 must exist: Qt needs it for fonts.
@@ -70,7 +72,10 @@ a { color: #1a5fb4; text-decoration: underline; }
 _TABLE = re.compile(r"<table(?! class='maps')")
 _HEADING = re.compile(r"<h[1-6]\b")
 _PAGE_BREAK = " style='page-break-before: always'"
-_DATA_IMAGE = re.compile(r"""src=(['"])data:image/(png|jpeg);base64,([A-Za-z0-9+/=]+)\1""")
+_DATA_IMAGE = re.compile(r"""<img\b[^>]*?src=(['"])data:image/(png|jpeg);base64,"""
+                         r"""([A-Za-z0-9+/=]+)\1[^>]*>""")
+IMAGE_MAX_HEIGHT = 0.8      # of the page: room for its heading and caption beside it
+SHORT_LINES = 3             # a paragraph this short goes with what follows it
 
 
 class PdfError(RuntimeError):
@@ -133,6 +138,10 @@ def _print(html: str, path: Path, title: str) -> Optional[Tuple[int, tuple]]:
 
     doc = QTextDocument()
     doc.setDefaultStyleSheet(CSS)
+    writer = _writer(path, title)
+    # The page in the 96 dpi pixels an <img>'s size is given in.
+    paint = writer.pageLayout().paintRect(QPageLayout.Point)
+    page_w, page_h = paint.width() * 96 / 72, paint.height() * 96 / 72
     # The images go in as resources: not every Qt version reads data: URLs in rich text.
     images = []
 
@@ -140,7 +149,9 @@ def _print(html: str, path: Path, title: str) -> Optional[Tuple[int, tuple]]:
         img = QImage.fromData(base64.b64decode(m.group(3)), m.group(2).upper())
         name = f"capscan-image:{len(images)}"
         images.append((name, img))
-        return f"src='{name}'"
+        w, h = fit_image(img.width(), img.height(), img.dotsPerMeterX() * 0.0254,
+                         page_w, page_h * IMAGE_MAX_HEIGHT)
+        return f"<img src='{name}' width='{w}' height='{h}'>"
 
     html = _TABLE.sub("<table width='100%'", _DATA_IMAGE.sub(resource, html))
     for name, img in images:
@@ -153,7 +164,6 @@ def _print(html: str, path: Path, title: str) -> Optional[Tuple[int, tuple]]:
     doc.addResource(QTextDocument.ImageResource, QUrl(NOTES_IMAGE), blank)
     html = html.replace(NOTES_MARKER, f"<img src='{NOTES_IMAGE}' width='1' "
                                       f"height='{round(NOTES_HEIGHT_PT * 96 / 72)}'>")
-    writer = _writer(path, title)
 
     # Laid out on the writer itself, in its pixels, one page at a time (what print() does,
     # but here the notes box's place on the page is known).
@@ -213,6 +223,14 @@ def _print(html: str, path: Path, title: str) -> Optional[Tuple[int, tuple]]:
     return notes
 
 
+def fit_image(w: int, h: int, dpi: float, max_w: float, max_h: float) -> Tuple[int, int]:
+    """The size, in 96 dpi pixels, to print a ``w`` x ``h`` pixel image at: its own size
+    (from its ``dpi``; 96 when it has none), shrunk to fit ``max_w`` x ``max_h``."""
+    scale = 96 / dpi if dpi > 1 else 1.0
+    scale *= min(1.0, max_w / (w * scale), max_h / (h * scale))
+    return max(1, int(w * scale)), max(1, int(h * scale))
+
+
 def _writer(path, title=""):
     """The PDF writer: Letter where the locale measures in inches, else A4."""
     from qtpy.QtCore import QLocale, QMarginsF
@@ -237,12 +255,38 @@ def _line(layout, block):
     return top, top + line.height()
 
 
+def _content_end(doc, block, notes, follow: bool = True):
+    """The bottom of the start of what a heading heads, which must share the heading's
+    page; ``block`` is its first block. That is a table's heading row and first row, the
+    notes box whole, or a paragraph's first line. A short paragraph (a note) takes the
+    start of what follows it as well, unless that is another heading."""
+    from qtpy.QtGui import QTextCursor
+    layout = doc.documentLayout()
+    table = QTextCursor(block).currentTable()
+    if table is not None:
+        if notes is not None and table.firstPosition() == notes.firstPosition():
+            return layout.frameBoundingRect(table).bottom()
+        cell = table.cellAt(min(1, table.rows() - 1), 0)
+        line = _line(layout, doc.findBlock(cell.firstPosition()))
+        return line[1] if line else None
+    line = _line(layout, block)
+    if line is None:
+        return None
+    if follow and block.layout().lineCount() <= SHORT_LINES:
+        after = block.next()
+        while after.isValid() and not after.text().strip():
+            after = after.next()
+        if after.isValid() and not after.blockFormat().headingLevel():
+            end = _content_end(doc, after, notes, follow=False)
+            if end is not None:
+                return max(line[1], end)
+    return line[1]
+
+
 def _stranded_heading(doc, h):
     """The number (in the document's order) of the first heading left at the foot of a
-    page: on another page than the first line of what it heads, or for the notes box, its
-    whole box. Headings one after another go together, by the first. None if no heading
-    is."""
-    from qtpy.QtGui import QTextCursor
+    page: on another page than the start of what it heads (:func:`_content_end`).
+    Headings one after another go together, by the first. None if no heading is."""
     layout = doc.documentLayout()
     notes = _notes_table(doc)
     count, run = 0, None                   # run: the first of the headings just passed
@@ -254,13 +298,7 @@ def _stranded_heading(doc, h):
                 run = (count, int(line[0] // h))
             count += 1
         elif run is not None and block.text().strip():
-            table = QTextCursor(block).currentTable()
-            if notes is not None and table is not None \
-                    and table.firstPosition() == notes.firstPosition():
-                end = layout.frameBoundingRect(table).bottom()
-            else:
-                line = _line(layout, block)
-                end = line[1] if line else None
+            end = _content_end(doc, block, notes)
             if end is not None and int((end - 1) // h) != run[1]:
                 return run[0]
             run = None
