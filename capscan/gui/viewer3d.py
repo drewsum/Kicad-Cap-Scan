@@ -14,7 +14,7 @@ import pyvista as pv
 from pyvistaqt import QtInteractor
 from qtpy.QtWidgets import QVBoxLayout, QWidget
 
-from capscan.report.maps import NET_COLORS
+from capscan.report.maps import NET_COLORS, PREVIEW_DIM, layer_color
 from capscan.report.scene3d import Scene
 
 _BOARD_COLOR = (0.15, 0.40, 0.20)
@@ -56,6 +56,11 @@ def _polyline(rings: List[np.ndarray]) -> Optional[pv.PolyData]:
     return pv.PolyData(np.vstack(pts), lines=np.asarray(cells))
 
 
+def _layer_rgb(layers: List[int]) -> np.ndarray:
+    return np.array([[int(layer_color(l)[i:i + 2], 16) for i in (1, 3, 5)] for l in layers],
+                    dtype=np.uint8)
+
+
 class Viewer3D(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -69,6 +74,21 @@ class Viewer3D(QWidget):
         self._scene: Optional[Scene] = None
         self._actors: Dict[str, list] = {}
         self._hidden_layers: set = set()
+
+    def _preview_tracks(self, scene: Scene):
+        """Before a scan: the routing in its layers' colors, the picked nets solid and wider
+        and the rest faint (all solid when nothing is picked)."""
+        picked = bool(scene.hot_tracks)
+        hot = _lines([s for s, _ in scene.hot_tracks])
+        if hot is not None:
+            hot.cell_data["rgb"] = _layer_rgb(scene.hot_layers)
+            self._add("tracks", hot, scalars="rgb", rgb=True, line_width=4,
+                      render_lines_as_tubes=True)
+        cold = _lines(scene.cold_tracks)
+        if cold is not None:
+            cold.cell_data["rgb"] = _layer_rgb(scene.cold_layers)
+            self._add("tracks", cold, scalars="rgb", rgb=True, line_width=1.5,
+                      opacity=PREVIEW_DIM if picked else 1.0)
 
     def clear(self):
         self.plotter.clear()
@@ -96,7 +116,8 @@ class Viewer3D(QWidget):
 
         nets = sorted({net for _, net in scene.plane_edges})
         for (layer, net), rings in scene.plane_edges.items():
-            color = NET_COLORS[nets.index(net) % len(NET_COLORS)]
+            color = (layer_color(layer) if scene.preview
+                     else NET_COLORS[nets.index(net) % len(NET_COLORS)])
             self._add(f"layer{layer}", _polyline(rings), color=color, line_width=2)
 
         for i, sheet in enumerate(scene.sheets):
@@ -112,13 +133,18 @@ class Viewer3D(QWidget):
         for bar in p.scalar_bars.values():
             bar.SetTextPositionToPrecedeScalarBar()     # value ticks left of the bar
 
-        hot =_lines([s for s, _ in scene.hot_tracks])
+        if scene.preview:
+            self._preview_tracks(scene)
+            hot = None
+        else:
+            hot = _lines([s for s, _ in scene.hot_tracks])
         if hot is not None:
             hot.cell_data["heat"] = np.array([h for _, h in scene.hot_tracks])
             self._add("tracks", hot, scalars="heat", cmap="inferno", clim=(0, 1), line_width=4,
                       render_lines_as_tubes=True, show_scalar_bar=False)
-        self._add("tracks", _lines(scene.cold_tracks), color=_COLD_TRACK, line_width=1.5,
-                  opacity=0.6)
+        if not scene.preview:
+            self._add("tracks", _lines(scene.cold_tracks), color=_COLD_TRACK, line_width=1.5,
+                      opacity=0.6)
 
         for _, xyz, angle, _ in scene.caps:
             a = math.radians(angle)

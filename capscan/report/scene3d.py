@@ -43,6 +43,9 @@ class Scene:
     caps: List[Tuple[str, np.ndarray, float, str]]  # (id, xyz, angle_deg, label)
     vias: List[Tuple[str, np.ndarray]]
     layer_names: Dict[int, str] = field(default_factory=dict)
+    preview: bool = False           # before a scan: copper in KiCad's layer colors
+    hot_layers: List[int] = field(default_factory=list)     # the layer of each hot track
+    cold_layers: List[int] = field(default_factory=list)    # the layer of each cold track
 
 
 def build_scene(data: MapData, zscale: float = 6.0) -> Scene:
@@ -77,7 +80,7 @@ def build_scene(data: MapData, zscale: float = 6.0) -> Scene:
                     edges.setdefault((lid, net), []).append(
                         np.column_stack([a[:, 0], -a[:, 1], np.full(len(a), z.get(lid, 0.0))]))
 
-    hot, cold = [], []
+    hot, cold, hot_layers, cold_layers = [], [], [], []
     signals = set(r.signal_nets)
     for t, heat in zip(snap.tracks, data.track_heat):
         if t.net not in signals:
@@ -88,8 +91,10 @@ def build_scene(data: MapData, zscale: float = 6.0) -> Scene:
             seg = np.array([[a[0], -a[1], zz], [b[0], -b[1], zz]])
             if heat > 0.05:
                 hot.append((seg, heat))
+                hot_layers.append(t.layer)
             else:
                 cold.append(seg)
+                cold_layers.append(t.layer)
 
     caps = []
     for c in r.caps:
@@ -100,4 +105,5 @@ def build_scene(data: MapData, zscale: float = 6.0) -> Scene:
             for v in r.stitch_vias]
     return Scene(zscale=zscale, thickness=thickness, outline=outline, sheets=sheets,
                  plane_edges=edges, hot_tracks=hot, cold_tracks=cold, caps=caps, vias=vias,
-                 layer_names=dict(r.layer_names))
+                 layer_names=dict(r.layer_names), preview=r.preview, hot_layers=hot_layers,
+                 cold_layers=cold_layers)

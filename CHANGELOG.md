@@ -21,6 +21,9 @@ a release renames that heading to its version and date.
   itself once the window is open. The About dialog's icon is animated too (#4).
 
 ### Changed
+- Before a scan the board's copper is drawn in KiCad's layer colors (F.Cu red, B.Cu blue,
+  and so on), in 2D and 3D, with the nets picked to scan solid and the rest faint. After a
+  scan the planes are still colored by net (#14).
 - Each stitching cap's package and value are picked from the edge rate; there is no
   package to set. Faster edges get smaller packages, or several 0402s in parallel (a new
   Qty column); the value is the largest X7R that package stocks at the voltage rating. The

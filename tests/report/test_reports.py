@@ -102,3 +102,72 @@ def test_pdf_heading_and_note_go_over_with_their_table():
     else:
         pytest.fail("no layout left the table alone on the next page")
     assert _stranded_heading(doc, h) == 0
+
+
+# Before a scan the copper is drawn in KiCad's layer colors (#14).
+
+def _maps(highlight=()):
+    import matplotlib
+    matplotlib.use("Agg", force=False)
+    from matplotlib.figure import Figure
+
+    from capscan.analysis.scan import preview_result
+    from capscan.report.maps import DARK, MapData, draw_map, legend_handles
+    snap, scanned = _scan()
+    preview = MapData(snap, preview_result(snap, highlight=highlight))
+    out = []
+    for data in (preview, MapData(snap, scanned)):
+        ax = Figure().add_subplot(111)
+        draw_map(ax, data, None)
+        out.append((data, ax, legend_handles(DARK, data, data.reference_layers())))
+    return out
+
+
+def _plane_colors(ax):
+    from matplotlib.colors import to_hex
+    return {to_hex(p.get_facecolor(), keep_alpha=False) for p in ax.patches}
+
+
+def test_kicad_layer_colors():
+    from capscan.model.layers import inner_cu
+    from capscan.report.maps import KICAD_INNER_CU, layer_color
+    assert (layer_color(F_CU), layer_color(B_CU)) == ("#c83434", "#4d7fc4")
+    assert (layer_color(inner_cu(1)), layer_color(inner_cu(2))) == ("#7fc87f", "#ce7d2c")
+    assert len(KICAD_INNER_CU) == 30 and layer_color(inner_cu(30)) == "#f2eda1"
+
+
+def test_preview_draws_copper_in_kicad_layer_colors():
+    from capscan.report.maps import NET_COLORS, layer_color
+    (pre, pre_ax, pre_legend), (scanned, ax, legend) = _maps()
+    planes = pre.reference_layers()
+    assert _plane_colors(pre_ax) == {layer_color(l) for l in planes}
+    assert _plane_colors(ax) <= set(NET_COLORS)            # scanned: planes by net, as before
+    names = [h.get_label() for h in pre_legend]
+    assert "In1.Cu" in names and "B.Cu" in names and "Split crossing" not in names
+    assert "Split crossing" in [h.get_label() for h in legend]
+
+
+def test_preview_tracks_take_their_layers_color_and_picked_nets_stand_out():
+    from matplotlib.colors import to_hex
+    from capscan.report.maps import PREVIEW_DIM, layer_color
+    (_, ax, _), _ = _maps()
+    (tracks,) = ax.collections
+    colors = {(to_hex(c, keep_alpha=False), round(c[3], 2)) for c in tracks.get_colors()}
+    assert colors == {(layer_color(F_CU), 1.0), (layer_color(B_CU), 1.0)}  # nothing picked
+    snap, _ = _scan()
+    picked = [i for i, t in enumerate(snap.tracks) if t.net == "SIG"]
+    (pre, ax, _), _ = _maps(highlight=["SIG"])
+    (tracks,) = ax.collections
+    alphas = [round(c[3], 2) for c in tracks.get_colors()]
+    widths = list(tracks.get_linewidths())
+    assert alphas.count(1.0) == len(picked) and alphas[-1] == 1.0     # picked: drawn last
+    assert set(alphas) == {1.0, PREVIEW_DIM} and max(widths) > min(widths)
+
+
+def test_preview_scene_carries_each_tracks_layer():
+    from capscan.report.scene3d import build_scene
+    (pre, _, _), (scanned, _, _) = _maps(highlight=["SIG"])
+    sc = build_scene(pre)
+    assert sc.preview and sc.hot_layers == [B_CU]
+    assert len(sc.cold_layers) == len(sc.cold_tracks) and F_CU in sc.cold_layers
+    assert not build_scene(scanned).preview

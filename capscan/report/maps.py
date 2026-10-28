@@ -1,5 +1,7 @@
 """The 2D placement map: planes, signals, crossings and capacitors on one layer, drawn
 with matplotlib. The window draws it dark (KiPI's plot style); reports draw it light.
+Before a scan the copper is drawn in KiCad's layer colors, so the board looks as it does
+in KiCad.
 """
 
 from __future__ import annotations
@@ -17,9 +19,38 @@ from capscan.analysis.references import zone_regions
 from capscan.analysis.results import HEAT_KINDS, SPLIT, UNFIXABLE, VOID, ScanResult
 from capscan.geometry.copper import iter_polygons, poly_to_shapely
 from capscan.model.board import BoardSnapshot
+from capscan.model.layers import B_CU, F_CU, is_inner
 
 # KiPI's series colors, for plane nets.
 NET_COLORS = ("#4fa3ff", "#ffa040", "#60d060", "#ff6080", "#c080ff", "#40d0d0", "#e0e060")
+
+# KiCad's default PCB color theme for copper (s_defaultTheme in
+# common/settings/builtin_color_themes.h). The IPC API does not give the user's own theme.
+KICAD_F_CU = "#c83434"
+KICAD_B_CU = "#4d7fc4"
+KICAD_INNER_CU = (                                          # In1.Cu .. In30.Cu
+    "#7fc87f", "#ce7d2c", "#4fcbcb", "#db628b", "#a7a5c6", "#28ccd9", "#e8b2a7", "#f2eda1",
+    "#8dcb81", "#ed7c33", "#5bc3eb", "#f76f8e", "#a7a5c6", "#28ccd9", "#e8b2a7", "#f2eda1",
+    "#ed7c33", "#5bc3eb", "#f76f8e", "#a7a5c6", "#28ccd9", "#e8b2a7", "#f2eda1", "#ed7c33",
+    "#5bc3eb", "#f76f8e", "#a7a5c6", "#28ccd9", "#e8b2a7", "#f2eda1")
+#: Before a scan: the tracks of nets not picked are drawn this faint, the picked ones solid.
+PREVIEW_DIM = 0.35
+
+
+def layer_color(layer_id: int) -> str:
+    """KiCad's default color for a copper layer."""
+    if layer_id == F_CU:
+        return KICAD_F_CU
+    if layer_id == B_CU:
+        return KICAD_B_CU
+    if is_inner(layer_id):
+        return KICAD_INNER_CU[layer_id - F_CU - 1]
+    return "#888888"
+
+
+def _stack_order(layers):
+    """Bottom layer first, so the top layer is drawn over the others, as in KiCad."""
+    return sorted(layers, key=lambda l: -l)
 
 
 @dataclass
@@ -130,23 +161,27 @@ def draw_map(ax, data: MapData, ref_layer: Optional[int], theme: Theme = DARK,
                           extent=(x0 - h.step_mm / 2, x0 + (nx - 0.5) * h.step_mm,
                                   y0 - h.step_mm / 2, y0 + (ny - 0.5) * h.step_mm),
                           alpha=0.75, zorder=1, interpolation="bilinear")
-    for lid in layers:
+    for lid in _stack_order(layers) if r.preview else layers:
         for net, g in data.regions.get(lid, {}).items():
-            _poly_patches(ax, g, data.net_color.get(net, "#888888"), theme.plane_alpha)
+            color = layer_color(lid) if r.preview else data.net_color.get(net, "#888888")
+            _poly_patches(ax, g, color, theme.plane_alpha)
 
     sig_layers = set()
     for lid in layers:
         sig_layers.update(data.signal_layers_over(lid))
     signals = set(r.signal_nets)
-    segs, colors = [], []
-    import matplotlib
-    cmap = matplotlib.colormaps["inferno"]
-    for t, heat in zip(data.snap.tracks, data.track_heat):
-        if t.layer in sig_layers and t.net in signals:
-            segs.append([t.start, t.mid, t.end] if t.is_arc else [t.start, t.end])
-            colors.append(cmap(0.35 + 0.65 * heat) if heat > 0.05 else theme.track)
-    if segs:
-        ax.add_collection(LineCollection(segs, colors=colors, linewidths=0.8, zorder=3))
+    if r.preview:
+        _preview_tracks(ax, data, sig_layers)
+    else:
+        segs, colors = [], []
+        import matplotlib
+        cmap = matplotlib.colormaps["inferno"]
+        for t, heat in zip(data.snap.tracks, data.track_heat):
+            if t.layer in sig_layers and t.net in signals:
+                segs.append([t.start, t.mid, t.end] if t.is_arc else [t.start, t.end])
+                colors.append(cmap(0.35 + 0.65 * heat) if heat > 0.05 else theme.track)
+        if segs:
+            ax.add_collection(LineCollection(segs, colors=colors, linewidths=0.8, zorder=3))
 
     for c in r.crossings:
         if c.ref_layer not in layers:
@@ -211,9 +246,42 @@ def draw_map(ax, data: MapData, ref_layer: Optional[int], theme: Theme = DARK,
         ax.set_ylim(y1 + pad, y0 - pad)          # KiCad's y points down
 
 
+def _preview_tracks(ax, data: MapData, sig_layers) -> None:
+    """The signal routing in its layers' colors, the picked nets solid and wider and the
+    rest faint (KiCad's net highlight). With nothing picked every track is solid."""
+    from matplotlib.collections import LineCollection
+    from matplotlib.colors import to_rgba
+
+    signals = set(data.result.signal_nets)
+    picked = any(h > 0.05 for h in data.track_heat)
+    rows = [(t, h) for t, h in zip(data.snap.tracks, data.track_heat)
+            if t.layer in sig_layers and t.net in signals]
+    rows.sort(key=lambda row: (row[1] > 0.05, -row[0].layer))  # picked and top layer last
+    segs, colors, widths = [], [], []
+    for t, heat in rows:
+        hot = heat > 0.05 or not picked
+        segs.append([t.start, t.mid, t.end] if t.is_arc else [t.start, t.end])
+        colors.append(to_rgba(layer_color(t.layer), 1.0 if hot else PREVIEW_DIM))
+        widths.append(1.4 if hot and picked else 0.8)
+    if segs:
+        ax.add_collection(LineCollection(segs, colors=colors, linewidths=widths, zorder=3))
+
+
+def preview_layers(data: MapData, layers: Sequence[int]):
+    """The copper layers a preview of ``layers`` draws: the planes and the signals over them,
+    top first."""
+    shown = set(layers)
+    for l in layers:
+        shown.update(data.signal_layers_over(l))
+    return sorted(shown)
+
+
 def legend_handles(theme: Theme, data: MapData, layers: Sequence[int]):
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
+    if data.result.preview:
+        return [Patch(facecolor=layer_color(l), label=data.result.layer_name(l))
+                for l in preview_layers(data, layers)]
     nets = sorted({n for l in layers for n in data.regions.get(l, {})})
     h = [Patch(facecolor=data.net_color[n], alpha=0.6, label=n) for n in nets]
     h += [Line2D([], [], marker="x", ls="", color=theme.split, label="Split crossing"),
