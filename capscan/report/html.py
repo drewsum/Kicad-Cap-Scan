@@ -266,7 +266,9 @@ def plotly_3d(snap: BoardSnapshot, r: ScanResult, data: Optional[MapData] = None
                                    name="Return vias", marker=dict(size=4, color="#8040c0")))
     fig.update_layout(
         height=640, margin=dict(l=0, r=0, t=30, b=0), paper_bgcolor="#1e1f24",
-        font=dict(color="#ccc"), legend=dict(bgcolor="rgba(0,0,0,0)"),
+        font=dict(color="#ccc"),
+        # Top left: at the right it would sit on the scale's title.
+        legend=dict(bgcolor="rgba(0,0,0,0)", x=0.01, y=0.99, xanchor="left", yanchor="top"),
         scene=dict(aspectmode="data", bgcolor="#2a2c33",
                    xaxis=dict(title="x (mm)"), yaxis=dict(title="y (mm)"),
                    zaxis=dict(title=f"z (×{sc.zscale:g})")))

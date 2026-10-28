@@ -14,6 +14,13 @@ a release renames that heading to its version and date.
   and its gap, a via changing reference plane, a void, the edge rate, what a trace's
   characteristic impedance is, a decoupling cap, how a supply is told from a signal, and
   the voltage rating (#16).
+- Screenshots in the README of each part of CapScan at work on a real board: the 3D heat
+  map, the 2D placement, the tables, the net list, a tooltip, *Add to board* and the HTML
+  report. `tools/screenshots.py` takes them again from the board open in KiCad (#15).
+
+### Fixed
+- HTML report: the 3D view's legend no longer covers the title of its heat scale.
+- The 3D view's heat scale shows its whole title ("Transitions" was cut off at the right).
 
 ## [0.2.0] - 2026-10-27
 

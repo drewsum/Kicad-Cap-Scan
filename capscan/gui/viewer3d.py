@@ -23,9 +23,9 @@ _VIA_COLOR = (0.75, 0.50, 1.0)
 _COLD_TRACK = (0.55, 0.55, 0.55)
 #: Heat below this is transparent, so the planes and routing show through.
 _HEAT_OPACITY = [0.0, 0.0, 0.35, 0.6, 0.75, 0.85, 0.9]
-# The scale bar sits against the view's right edge (next to the setup panes), leaving a
-# small gap, so it covers as little of the board as it can.
-_BAR_RIGHT = 0.995
+# The scale bar sits near the view's right edge (next to the setup panes), so it covers as
+# little of the board as it can, with room for its title (wider than the bar) to the right.
+_BAR_RIGHT = 0.975
 _BAR_WIDTH = 0.03
 _BAR_Y, _BAR_HEIGHT = 0.25, 0.5
 
