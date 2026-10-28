@@ -1,11 +1,11 @@
-"""CHANGELOG.md keeps step with the version."""
+"""docs/CHANGELOG.md keeps step with the version."""
 
 import re
 from pathlib import Path
 
 from capscan import __version__
 
-CHANGELOG = Path(__file__).resolve().parents[1] / "CHANGELOG.md"
+CHANGELOG = Path(__file__).resolve().parents[1] / "docs" / "CHANGELOG.md"
 
 
 def _versions():

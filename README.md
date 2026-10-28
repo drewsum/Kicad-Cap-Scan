@@ -17,7 +17,7 @@ a fast digital signal (100 ps edges on 50 Ω traces) unless you give it its own 
 impedance, and every default leans towards more stitching rather than less: a basic utility
 that keeps every signal's return path next to it.
 
-What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
+What changed in each release is in [docs/CHANGELOG.md](docs/CHANGELOG.md).
 
 ## What it finds
 
@@ -190,7 +190,7 @@ python -m venv .venv
 | `capscan/report/` | The 2D map, the 3D scene, and the HTML / PDF reports |
 | `capscan/gui/` | The window (Qt, pyvista, matplotlib) |
 | `resources/` | The icons, and `capscan.gif`, the animated logo (`tools/make_logo_gif.py` draws it) |
-| `CHANGELOG.md` | What changed in each release; add a line under **Unreleased** with each change |
+| `docs/CHANGELOG.md` | What changed in each release; add a line under **Unreleased** with each change |
 | `tests/` | pytest. `tests/helpers/boards.py` builds boards with known answers; `kicad_fake.py` answers like each KiCad release |
 | `.github/` | CI; `release.yml` attaches `CapScan-<tag>.zip` to each release; `stats.yml` publishes the clone and download counts the About dialog shows |
 
