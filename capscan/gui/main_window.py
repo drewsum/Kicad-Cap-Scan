@@ -29,6 +29,7 @@ from capscan.gui import app as capscan_app
 from capscan.gui.board_map import BoardMap, HeatToggles
 from capscan.gui.docks import make_detachable
 from capscan.gui.net_picker import NetPicker
+from capscan.gui.tooltip_art import art_tip
 from capscan.gui.worker import QtProgress, Task
 from capscan.model.board import BoardSnapshot, CopperLayer
 from capscan.report.maps import MapData
@@ -97,6 +98,70 @@ def _table() -> QTableWidget:
     return t
 
 
+#: Each setting's tooltip: its text, and the drawing in ``gui/graphics`` with the parts of it
+#: to pick out (#16). A setting without a drawing has its text alone.
+TIPS = {
+    "check_splits": ("A trace over the gap between two planes of different nets: its return "
+                     "current has no path across. A stitching cap bridges the gap next to "
+                     "the crossing.", "split_crossing", "cap", "ret"),
+    "check_via_caps": ("A via taking a signal from over one net's plane to over another's: "
+                       "the return current must jump between the planes. A stitching cap "
+                       "between them, next to the via, gives it a path.",
+                       "via_transition", "cap"),
+    "check_via_stitch": ("A via taking a signal between two planes of the same net: a return "
+                         "via beside it joins the planes.", "via_transition", "rvia"),
+    "check_voids": ("A trace over a hole in its plane: the return current goes round it. "
+                    "Flagged for rerouting, or for filling the plane; no part fixes it.",
+                    "void", "void", "ret"),
+    "edge_rate_ps": ("10-90 % edge rate of a net not given its own in the net list. Faster "
+                     "edges need a cap with less inductance: a smaller package, or several "
+                     "in parallel.", "edge_rate", "tr"),
+    "trace_impedance_ohm": ("Single-ended impedance of a trace not given its own in the net "
+                            "list (half a differential pair's). The lower it is, the more the "
+                            "cap's inductance slows the edge.", "edge_rate", "slow"),
+    "max_cap_distance_mm": ("Furthest a stitching cap may be from where the trace crosses "
+                            "the split.", "split_crossing", "dist"),
+    "via_cap_distance_mm": ("Furthest a stitching cap may be from a via that changes onto "
+                            "another net's plane.", "via_transition", "dcap"),
+    "stitch_via_distance_mm": ("Furthest a return via may be from a via that changes between "
+                               "planes of the same net.", "via_transition", "dvia"),
+    "signals_per_cap": ("Most signals one stitching cap returns current for: shared by many "
+                        "switching signals, its inductance no longer holds the return path.",
+                        "split_crossing", "sig"),
+    "split_gap_max_mm": ("A gap between two planes up to this wide is a split a cap can "
+                         "bridge; a wider one is a void.", "split_crossing", "gap"),
+    "void_ignore_mm": ("Holes in a plane shorter than this along the trace are ignored (via "
+                       "antipads, thermal reliefs): the return current goes round them with "
+                       "little detour.", "void", "small"),
+    "decoupling_ic_distance_mm": ("A cap with a pad this close to an IC pin on the same net "
+                                  "decouples that IC. Return current through it would flow "
+                                  "through the IC's supply, so it never counts as a "
+                                  "stitching cap.", "decoupling", "dist", "dec"),
+    "power_min_zone_layers": ("A net poured on this many copper layers is a supply, not a "
+                              "signal, whatever its name. 0 turns this off.",
+                              "supply_detect", "pour"),
+    "power_via_array": ("A net with this many vias in one array is a supply: a signal changes "
+                        "layer through one via. 0 turns this off.", "supply_detect", "array"),
+    "power_via_pitch_mm": ("Vias this close to the next stand in one array.",
+                           "supply_detect", "pitch"),
+    "cap_rise_time_budget": ("The cap's mounted inductance L slows the edge by 1.1 L / Z0. "
+                             "This share of the edge rate is allowed; it picks the package.",
+                             "edge_rate", "slow"),
+    "cap_value": ("A value for every stitching cap instead of the one picked from the edge "
+                  "rate; blank picks it. The package is still picked.",),
+    "voltage_derating": ("The cap's voltage rating is at least this many times the voltage "
+                         "between its two planes, rounded up to a standard rating.",
+                         "derating", "derate", "rating"),
+    "min_voltage_rating_v": ("No stitching cap is rated below this.", "derating", "min"),
+}
+
+
+def setting_tip(name: str) -> str:
+    """The tooltip of the setting ``name``, with its drawing where it has one."""
+    text, *art = TIPS.get(name, ("",))
+    return art_tip(text, *art) if art else text
+
+
 class SettingsPanel(QWidget):
     """The scan settings: the few that matter up top, every rule under Advanced."""
 
@@ -132,12 +197,13 @@ class SettingsPanel(QWidget):
         for name, label in DESCRIPTIONS.items():
             w = self._editor(getattr(settings, name), name in self.CAN_BE_OFF)
             self._fields[name] = w
-            if name in self.BASIC:
-                basic.addRow(label, w)
-            else:
-                adv.addRow(label, w)
-                self._adv_widgets.append(w)
-                self._adv_widgets.append(adv.labelForField(w))
+            form = basic if name in self.BASIC else adv
+            form.addRow(label, w)
+            tip = setting_tip(name)
+            for part in (w, form.labelForField(w)):
+                part.setToolTip(tip)
+            if form is adv:
+                self._adv_widgets += [w, adv.labelForField(w)]
         for name in ("edge_rate_ps", "trace_impedance_ohm"):
             self._fields[name].valueChanged.connect(lambda _: self.nets.set_defaults(
                 self._fields["edge_rate_ps"].value(),

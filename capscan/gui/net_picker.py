@@ -13,6 +13,8 @@ from qtpy.QtWidgets import (
     QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from capscan.gui.tooltip_art import art_tip
+
 HINT = "color: #999;"
 WARN = "color: #ffc060;"
 DEFAULT_COLOR = QColor("#888888")
@@ -61,9 +63,9 @@ class NetPicker(QWidget):
         layout.addWidget(self.filter)
         self.list = QTableWidget(0, 3)
         self.list.setHorizontalHeaderLabels(["Net", "Edge ps", "Z0 Ω"])
-        self.list.horizontalHeaderItem(EDGE).setToolTip(
+        self.list.horizontalHeaderItem(EDGE).setToolTip(art_tip(
             "10-90 % edge rate of the signal. Grey: the default edge rate. Double-click to "
-            "set; clear the cell to go back to the default.")
+            "set; clear the cell to go back to the default.", "edge_rate", "tr"))
         self.list.horizontalHeaderItem(Z0).setToolTip(
             "Single-ended impedance of the trace (half a differential pair's). Grey: the "
             "default. Double-click to set; clear the cell to go back to the default.")

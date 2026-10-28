@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="166" viewBox="0 0 280 166">
+  <rect x="0" y="0" width="280" height="166" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <!-- two planes of different nets, seen from above, with a split between them -->
+    <rect x="14" y="14" width="118" height="114" rx="3" fill="{grid}"/>
+    <rect x="148" y="14" width="118" height="114" rx="3" fill="{grid}"/>
+    <text x="20" y="122" fill="{muted}">GND</text>
+    <text x="260" y="122" fill="{muted}" text-anchor="end">+3V3</text>
+    <!-- the signals crossing it -->
+    <path d="M24,38 H256 M24,58 H256" stroke="{sig}" stroke-width="2" fill="none"/>
+    <text x="22" y="30" fill="{sig}" font-size="10">signals</text>
+    <!-- their return current, under them, across the cap -->
+    <path d="M30,66 H131 V88 M149,88 V66 H250" stroke="{ret}" stroke-width="1.4" stroke-dasharray="4 3" fill="none"/>
+    <text x="22" y="84" fill="{ret}" font-size="10">return current</text>
+    <!-- the stitching cap bridging the split -->
+    <rect x="127" y="88" width="26" height="12" rx="2" stroke="{cap}" stroke-width="1.4" fill="{bg}"/>
+    <rect x="127" y="88" width="7" height="12" fill="{cap}"/>
+    <rect x="146" y="88" width="7" height="12" fill="{cap}"/>
+    <text x="140" y="114" fill="{cap}" text-anchor="middle">cap</text>
+    <!-- how far the cap is from the crossing -->
+    <path d="M160,60 V86 M157,64 L160,60 L163,64 M157,82 L160,86 L163,82" stroke="{dist}" stroke-width="1.2" fill="none"/>
+    <text x="166" y="78" fill="{dist}" font-size="10">distance</text>
+    <!-- how wide the split is -->
+    <path d="M132,134 V146 M148,134 V146 M132,140 H148" stroke="{gap}" stroke-width="1.2" fill="none"/>
+    <text x="140" y="160" fill="{gap}" text-anchor="middle" font-size="10">gap</text>
+  </g>
+</svg>

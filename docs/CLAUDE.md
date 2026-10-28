@@ -10,4 +10,5 @@ window scaffolding were copied from there. Keep them in step by hand when KiPI f
 - KiCad version differences are handled by what KiCad answers (`_unsupported` in `kicad/extract.py`), not by version numbers; `tests/helpers/kicad_fake.py` answers like each release. Add a release to `VERSIONS` and to the CI `kicad` job together.
 - Test boards with known answers are built in `tests/helpers/boards.py`.
 - `requirements.txt` (what KiCad installs into the plugin venv) must match `pyproject.toml` dependencies (`tests/test_requirements.py`).
-- Add a line under **Unreleased** in `CHANGELOG.md` with each user-visible change; a release renames it to the version (`tests/test_changelog.py` checks `__version__` has a section).
+- Tooltips that explain something visual get a drawing: an SVG in `capscan/gui/graphics/` (conventions in its README, as KiPI's) shown with `art_tip()` from `gui/tooltip_art.py`.
+- Add a line under **Unreleased** in `docs/CHANGELOG.md` with each user-visible change; a release renames it to the version (`tests/test_changelog.py` checks `__version__` has a section).

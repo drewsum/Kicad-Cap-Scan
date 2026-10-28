@@ -7,6 +7,13 @@ a release renames that heading to its version and date.
 
 ## [Unreleased]
 
+### Added
+- Every scan setting has a tooltip, and those about something easier seen than read show a
+  small drawing under their text, in the window's colors, with the part the setting is
+  about picked out: a split crossing and its gap, a via changing reference plane, a void,
+  the edge rate, a decoupling cap, how a supply is told from a signal, and the voltage
+  rating (#16).
+
 ## [0.2.0] - 2026-10-27
 
 ### Added

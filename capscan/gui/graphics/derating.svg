@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="146" viewBox="0 0 280 146">
+  <rect x="0" y="0" width="280" height="146" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <!-- the standard voltage ratings -->
+    <path d="M20,90 H264" stroke="{muted}" stroke-width="1.2" fill="none"/>
+    <path d="M60,86 V94 M90,86 V94 M125,86 V94 M160,86 V94 M190,86 V94 M220,86 V94" stroke="{muted}" stroke-width="1.2" fill="none"/>
+    <g text-anchor="middle" font-size="10">
+      <text x="60" y="108" fill="{muted}">6.3</text>
+      <text x="90" y="108" fill="{muted}">10</text>
+      <text x="125" y="108" fill="{min}">16</text>
+      <text x="160" y="108" fill="{muted}">25</text>
+      <text x="190" y="108" fill="{muted}">35</text>
+      <text x="220" y="108" fill="{muted}">50 V</text>
+      <text x="125" y="122" fill="{min}">least</text>
+    </g>
+    <!-- the voltage across the cap, times the derating, rounded up to a rating -->
+    <path d="M110,40 V90" stroke="{v}" stroke-width="2" fill="none"/>
+    <text x="110" y="32" fill="{v}" text-anchor="middle" font-size="10">12 V across</text>
+    <path d="M112,60 H153 M149,57 L153,60 L149,63" stroke="{derate}" stroke-width="1.6" fill="none"/>
+    <text x="134" y="54" fill="{derate}" text-anchor="middle" font-size="10">x 2</text>
+    <path d="M155,60 V90" stroke="{derate}" stroke-width="1" stroke-dasharray="2 2" fill="none"/>
+    <circle cx="160" cy="90" r="5" fill="{rating}"/>
+    <text x="160" y="138" fill="{rating}" text-anchor="middle" font-size="10">rated 25 V</text>
+  </g>
+</svg>
