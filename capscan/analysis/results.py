@@ -96,6 +96,12 @@ class StitchCap:
     ref_layers: List[int] = field(default_factory=list)
     crowded: bool = False           # no free spot found; place by hand near here
     note: str = ""
+    count: int = 1                  # parts in parallel at this spot, each with its own vias
+
+    @property
+    def amount(self) -> str:
+        """The value, with how many when more than one: "2 x 100nF"."""
+        return f"{self.count} x {self.value}" if self.count > 1 else self.value
 
 
 @dataclass
@@ -240,6 +246,7 @@ class ScanResult:
                 "voids": len(self.voids()), "via_changes": len(self.via_changes()),
                 "stitch_vias": len(self.stitch_vias),
                 "existing_credited": sum(1 for e in self.existing if e.credited),
+                "existing_decoupling": sum(1 for e in self.existing if e.role == "decoupling"),
                 "decoupling_flags": len(self.decoupling_flags())}
 
     # --- files ---------------------------------------------------------------------

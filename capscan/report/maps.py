@@ -1,5 +1,7 @@
 """The 2D placement map: planes, signals, crossings and capacitors on one layer, drawn
 with matplotlib. The window draws it dark (KiPI's plot style); reports draw it light.
+Before a scan the copper is drawn in KiCad's layer colors, so the board looks as it does
+in KiCad.
 """
 
 from __future__ import annotations
@@ -17,9 +19,38 @@ from capscan.analysis.references import zone_regions
 from capscan.analysis.results import HEAT_KINDS, SPLIT, UNFIXABLE, VOID, ScanResult
 from capscan.geometry.copper import iter_polygons, poly_to_shapely
 from capscan.model.board import BoardSnapshot
+from capscan.model.layers import B_CU, F_CU, is_inner
 
 # KiPI's series colors, for plane nets.
 NET_COLORS = ("#4fa3ff", "#ffa040", "#60d060", "#ff6080", "#c080ff", "#40d0d0", "#e0e060")
+
+# KiCad's default PCB color theme for copper (s_defaultTheme in
+# common/settings/builtin_color_themes.h). The IPC API does not give the user's own theme.
+KICAD_F_CU = "#c83434"
+KICAD_B_CU = "#4d7fc4"
+KICAD_INNER_CU = (                                          # In1.Cu .. In30.Cu
+    "#7fc87f", "#ce7d2c", "#4fcbcb", "#db628b", "#a7a5c6", "#28ccd9", "#e8b2a7", "#f2eda1",
+    "#8dcb81", "#ed7c33", "#5bc3eb", "#f76f8e", "#a7a5c6", "#28ccd9", "#e8b2a7", "#f2eda1",
+    "#ed7c33", "#5bc3eb", "#f76f8e", "#a7a5c6", "#28ccd9", "#e8b2a7", "#f2eda1", "#ed7c33",
+    "#5bc3eb", "#f76f8e", "#a7a5c6", "#28ccd9", "#e8b2a7", "#f2eda1")
+#: Before a scan: the tracks of nets not picked are drawn this faint, the picked ones solid.
+PREVIEW_DIM = 0.35
+
+
+def layer_color(layer_id: int) -> str:
+    """KiCad's default color for a copper layer."""
+    if layer_id == F_CU:
+        return KICAD_F_CU
+    if layer_id == B_CU:
+        return KICAD_B_CU
+    if is_inner(layer_id):
+        return KICAD_INNER_CU[layer_id - F_CU - 1]
+    return "#888888"
+
+
+def _stack_order(layers):
+    """Bottom layer first, so the top layer is drawn over the others, as in KiCad."""
+    return sorted(layers, key=lambda l: -l)
 
 
 @dataclass
@@ -61,7 +92,14 @@ class MapData:
         self.outline = [poly_to_shapely(p) for p in snap.outline]
         self.net_color = {n: NET_COLORS[i % len(NET_COLORS)]
                           for i, n in enumerate(sorted(planes))}
+        self.cache: dict = {}           # drawings of the planes, kept while they stay the same
         self.set_heat_kinds(heat_kinds)
+
+    def use_result(self, result: ScanResult):
+        """Show ``result`` over the same planes: a preview with other nets picked. The
+        planes (the slow part) are kept."""
+        self.result = result
+        self.set_heat_kinds(self.heat_kinds)
 
     def set_heat_kinds(self, kinds: Optional[Iterable[str]] = None):
         """Show the heat of these kinds of break (None: all), on the planes and tracks."""
@@ -107,8 +145,9 @@ def _poly_patches(ax, geom, color, alpha, edge=None):
 
 def draw_map(ax, data: MapData, ref_layer: Optional[int], theme: Theme = DARK,
              show_heat: bool = True, highlight: Optional[str] = None,
-             labels: bool = True) -> None:
-    """Draw one reference layer (None: every layer) and what crosses it on ``ax``."""
+             labels: bool = True):
+    """Draw one reference layer (None: every layer) and what crosses it on ``ax``. For a
+    preview, returns the tracks drawn (see :func:`redraw_preview_tracks`)."""
     from matplotlib.collections import LineCollection
 
     r = data.result
@@ -130,23 +169,26 @@ def draw_map(ax, data: MapData, ref_layer: Optional[int], theme: Theme = DARK,
                           extent=(x0 - h.step_mm / 2, x0 + (nx - 0.5) * h.step_mm,
                                   y0 - h.step_mm / 2, y0 + (ny - 0.5) * h.step_mm),
                           alpha=0.75, zorder=1, interpolation="bilinear")
-    for lid in layers:
+    for lid in _stack_order(layers) if r.preview else layers:
         for net, g in data.regions.get(lid, {}).items():
-            _poly_patches(ax, g, data.net_color.get(net, "#888888"), theme.plane_alpha)
+            color = layer_color(lid) if r.preview else data.net_color.get(net, "#888888")
+            _poly_patches(ax, g, color, theme.plane_alpha)
 
-    sig_layers = set()
-    for lid in layers:
-        sig_layers.update(data.signal_layers_over(lid))
+    sig_layers = _signal_layers(data, layers)
     signals = set(r.signal_nets)
-    segs, colors = [], []
-    import matplotlib
-    cmap = matplotlib.colormaps["inferno"]
-    for t, heat in zip(data.snap.tracks, data.track_heat):
-        if t.layer in sig_layers and t.net in signals:
-            segs.append([t.start, t.mid, t.end] if t.is_arc else [t.start, t.end])
-            colors.append(cmap(0.35 + 0.65 * heat) if heat > 0.05 else theme.track)
-    if segs:
-        ax.add_collection(LineCollection(segs, colors=colors, linewidths=0.8, zorder=3))
+    tracks = None
+    if r.preview:
+        tracks = _preview_tracks(ax, data, sig_layers)
+    else:
+        segs, colors = [], []
+        import matplotlib
+        cmap = matplotlib.colormaps["inferno"]
+        for t, heat in zip(data.snap.tracks, data.track_heat):
+            if t.layer in sig_layers and t.net in signals:
+                segs.append([t.start, t.mid, t.end] if t.is_arc else [t.start, t.end])
+                colors.append(cmap(0.35 + 0.65 * heat) if heat > 0.05 else theme.track)
+        if segs:
+            ax.add_collection(LineCollection(segs, colors=colors, linewidths=0.8, zorder=3))
 
     for c in r.crossings:
         if c.ref_layer not in layers:
@@ -209,11 +251,63 @@ def draw_map(ax, data: MapData, ref_layer: Optional[int], theme: Theme = DARK,
         pad = 0.03 * max(x1 - x0, y1 - y0)
         ax.set_xlim(x0 - pad, x1 + pad)
         ax.set_ylim(y1 + pad, y0 - pad)          # KiCad's y points down
+    return tracks
+
+
+def _signal_layers(data: MapData, layers) -> set:
+    out = set()
+    for lid in layers:
+        out.update(data.signal_layers_over(lid))
+    return out
+
+
+def redraw_preview_tracks(ax, data: MapData, ref_layer: Optional[int], old=None):
+    """Draw a preview's tracks again, with other nets picked, leaving the rest of the map;
+    ``old`` is what :func:`draw_map` (or this) returned."""
+    if old is not None:
+        old.remove()
+    layers = data.reference_layers() if ref_layer is None else [ref_layer]
+    return _preview_tracks(ax, data, _signal_layers(data, layers))
+
+
+def _preview_tracks(ax, data: MapData, sig_layers):
+    """The signal routing in its layers' colors, the picked nets solid and wider and the
+    rest faint (KiCad's net highlight). With nothing picked every track is solid."""
+    from matplotlib.collections import LineCollection
+    from matplotlib.colors import to_rgba
+
+    signals = set(data.result.signal_nets)
+    picked = any(h > 0.05 for h in data.track_heat)
+    rows = [(t, h) for t, h in zip(data.snap.tracks, data.track_heat)
+            if t.layer in sig_layers and t.net in signals]
+    rows.sort(key=lambda row: (row[1] > 0.05, -row[0].layer))  # picked and top layer last
+    segs, colors, widths = [], [], []
+    for t, heat in rows:
+        hot = heat > 0.05 or not picked
+        segs.append([t.start, t.mid, t.end] if t.is_arc else [t.start, t.end])
+        colors.append(to_rgba(layer_color(t.layer), 1.0 if hot else PREVIEW_DIM))
+        widths.append(1.4 if hot and picked else 0.8)
+    if segs:
+        return ax.add_collection(LineCollection(segs, colors=colors, linewidths=widths,
+                                                zorder=3))
+    return None
+
+
+def preview_layers(data: MapData, layers: Sequence[int]):
+    """The copper layers a preview of ``layers`` draws: the planes and the signals over them,
+    top first."""
+    shown = set(layers)
+    for l in layers:
+        shown.update(data.signal_layers_over(l))
+    return sorted(shown)
 
 
 def legend_handles(theme: Theme, data: MapData, layers: Sequence[int]):
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
+    if data.result.preview:
+        return [Patch(facecolor=layer_color(l), label=data.result.layer_name(l))
+                for l in preview_layers(data, layers)]
     nets = sorted({n for l in layers for n in data.regions.get(l, {})})
     h = [Patch(facecolor=data.net_color[n], alpha=0.6, label=n) for n in nets]
     h += [Line2D([], [], marker="x", ls="", color=theme.split, label="Split crossing"),
@@ -247,7 +341,8 @@ def map_png(data: MapData, ref_layer: Optional[int], theme: Theme = LIGHT,
         t.set_color(theme.text)
     fig.tight_layout()
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", facecolor=theme.face)
+    # Trimmed to the plot and its legend: no blank band above and below it on the page.
+    fig.savefig(buf, format="png", facecolor=theme.face, bbox_inches="tight", pad_inches=0.1)
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 

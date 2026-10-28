@@ -43,6 +43,23 @@ class Scene:
     caps: List[Tuple[str, np.ndarray, float, str]]  # (id, xyz, angle_deg, label)
     vias: List[Tuple[str, np.ndarray]]
     layer_names: Dict[int, str] = field(default_factory=dict)
+    preview: bool = False           # before a scan: copper in KiCad's layer colors
+    hot_layers: List[int] = field(default_factory=list)     # the layer of each hot track
+    cold_layers: List[int] = field(default_factory=list)    # the layer of each cold track
+
+
+def _plane_edges(data: MapData, layers, z) -> Dict[Tuple[int, str], List[np.ndarray]]:
+    edges: Dict[Tuple[int, str], List[np.ndarray]] = {}
+    for lid in layers:
+        for net, g in data.regions.get(lid, {}).items():
+            for p in iter_polygons(g.simplify(0.05)):
+                for k, ring in enumerate([p.exterior] + list(p.interiors)):
+                    a = np.asarray(ring.coords)
+                    if len(a) < 4 or (k > 0 and ring.length < MIN_HOLE_MM):
+                        continue        # small holes: antipads, thermal reliefs
+                    edges.setdefault((lid, net), []).append(
+                        np.column_stack([a[:, 0], -a[:, 1], np.full(len(a), z.get(lid, 0.0))]))
+    return edges
 
 
 def build_scene(data: MapData, zscale: float = 6.0) -> Scene:
@@ -66,18 +83,12 @@ def build_scene(data: MapData, zscale: float = 6.0) -> Scene:
         sheets.append(HeatSheet(h.layer, r.layer_name(h.layer), z.get(h.layer, 0.0), x, y,
                                 h.values))
 
-    edges: Dict[Tuple[int, str], List[np.ndarray]] = {}
-    for lid in data.reference_layers():
-        for net, g in data.regions.get(lid, {}).items():
-            for p in iter_polygons(g.simplify(0.05)):
-                for k, ring in enumerate([p.exterior] + list(p.interiors)):
-                    a = np.asarray(ring.coords)
-                    if len(a) < 4 or (k > 0 and ring.length < MIN_HOLE_MM):
-                        continue        # small holes: antipads, thermal reliefs
-                    edges.setdefault((lid, net), []).append(
-                        np.column_stack([a[:, 0], -a[:, 1], np.full(len(a), z.get(lid, 0.0))]))
+    layers = tuple(data.reference_layers())
+    edges = data.cache.get(("edges", zscale, layers))
+    if edges is None:           # the planes only change with the board: a preview redraw keeps them
+        edges = data.cache[("edges", zscale, layers)] = _plane_edges(data, layers, z)
 
-    hot, cold = [], []
+    hot, cold, hot_layers, cold_layers = [], [], [], []
     signals = set(r.signal_nets)
     for t, heat in zip(snap.tracks, data.track_heat):
         if t.net not in signals:
@@ -88,16 +99,19 @@ def build_scene(data: MapData, zscale: float = 6.0) -> Scene:
             seg = np.array([[a[0], -a[1], zz], [b[0], -b[1], zz]])
             if heat > 0.05:
                 hot.append((seg, heat))
+                hot_layers.append(t.layer)
             else:
                 cold.append(seg)
+                cold_layers.append(t.layer)
 
     caps = []
     for c in r.caps:
         zz = thickness + 0.25 * zscale if c.side == "top" else -0.25 * zscale
         caps.append((c.id, np.array([c.position[0], -c.position[1], zz]), c.angle_deg,
-                     f"{c.id} {c.value} {c.voltage_v:g}V"))
+                     f"{c.id} {c.amount} {c.voltage_v:g}V"))
     vias = [(v.id, np.array([v.position[0], -v.position[1], thickness / 2]))
             for v in r.stitch_vias]
     return Scene(zscale=zscale, thickness=thickness, outline=outline, sheets=sheets,
                  plane_edges=edges, hot_tracks=hot, cold_tracks=cold, caps=caps, vias=vias,
-                 layer_names=dict(r.layer_names))
+                 layer_names=dict(r.layer_names), preview=r.preview, hot_layers=hot_layers,
+                 cold_layers=cold_layers)

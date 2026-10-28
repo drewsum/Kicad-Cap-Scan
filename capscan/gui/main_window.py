@@ -24,10 +24,12 @@ from qtpy.QtWidgets import (
 from capscan import __version__
 from capscan.analysis.results import NEW_CAP, UNFIXABLE, VIA_CAP, ScanResult
 from capscan.analysis.rules import DESCRIPTIONS, ScanSettings
+from capscan.analysis.values import part_basis
 from capscan.gui import app as capscan_app
 from capscan.gui.board_map import BoardMap, HeatToggles
 from capscan.gui.docks import make_detachable
 from capscan.gui.net_picker import NetPicker
+from capscan.gui.tooltip_art import art_tip
 from capscan.gui.worker import QtProgress, Task
 from capscan.model.board import BoardSnapshot, CopperLayer
 from capscan.report.maps import MapData
@@ -49,6 +51,8 @@ STATUS_COLORS = {NEW_CAP: "#ffc060", "existing cap": "#60d060", UNFIXABLE: "#ff6
 LOG_COLORS = {logging.WARNING: "#ffc060", logging.ERROR: "#ff8080"}
 SETTINGS_KEY = "scan_settings"
 NETS_KEY = "nets/"              # + board file name: the nets picked for that board
+SPEEDS_KEY = "speeds/"          # + board file name: edge rates and impedances set per net
+FIRST_REF_KEY = "first_ref/"    # + board file name: the first reference of the caps added
 
 
 class _Item(QTableWidgetItem):
@@ -94,20 +98,87 @@ def _table() -> QTableWidget:
     return t
 
 
+#: Each setting's tooltip: its text, and the drawing in ``gui/graphics`` with the parts of it
+#: to pick out (#16). A setting without a drawing has its text alone.
+TIPS = {
+    "check_splits": ("A trace over the gap between two planes of different nets: its return "
+                     "current has no path across. A stitching cap bridges the gap next to "
+                     "the crossing.", "split_crossing", "cap", "ret"),
+    "check_via_caps": ("A via taking a signal from over one net's plane to over another's: "
+                       "the return current must jump between the planes. A stitching cap "
+                       "between them, next to the via, gives it a path.",
+                       "via_transition", "cap"),
+    "check_via_stitch": ("A via taking a signal between two planes of the same net: a return "
+                         "via beside it joins the planes.", "via_transition", "rvia"),
+    "check_voids": ("A trace over a hole in its plane: the return current goes round it. "
+                    "Flagged for rerouting, or for filling the plane; no part fixes it.",
+                    "void", "void", "ret"),
+    "edge_rate_ps": ("10-90 % edge rate of a net not given its own in the net list. Faster "
+                     "edges need a cap with less inductance: a smaller package, or several "
+                     "in parallel.", "edge_rate", "tr"),
+    "trace_impedance_ohm": ("Characteristic impedance of a trace not given its own in the "
+                            "net list, single-ended (half a differential pair's): set by its "
+                            "width, its height over the plane and the dielectric. The lower "
+                            "it is, the more the cap's inductance slows the edge.",
+                            "impedance", "z0"),
+    "max_cap_distance_mm": ("Furthest a stitching cap may be from where the trace crosses "
+                            "the split.", "split_crossing", "dist"),
+    "via_cap_distance_mm": ("Furthest a stitching cap may be from a via that changes onto "
+                            "another net's plane.", "via_transition", "dcap"),
+    "stitch_via_distance_mm": ("Furthest a return via may be from a via that changes between "
+                               "planes of the same net.", "via_transition", "dvia"),
+    "signals_per_cap": ("Most signals one stitching cap returns current for: shared by many "
+                        "switching signals, its inductance no longer holds the return path.",
+                        "split_crossing", "sig"),
+    "split_gap_max_mm": ("A gap between two planes up to this wide is a split a cap can "
+                         "bridge; a wider one is a void.", "split_crossing", "gap"),
+    "void_ignore_mm": ("Holes in a plane shorter than this along the trace are ignored (via "
+                       "antipads, thermal reliefs): the return current goes round them with "
+                       "little detour.", "void", "small"),
+    "decoupling_ic_distance_mm": ("A cap with a pad this close to an IC pin on the same net "
+                                  "decouples that IC. Return current through it would flow "
+                                  "through the IC's supply, so it never counts as a "
+                                  "stitching cap.", "decoupling", "dist", "dec"),
+    "power_min_zone_layers": ("A net poured on this many copper layers is a supply, not a "
+                              "signal, whatever its name. 0 turns this off.",
+                              "supply_detect", "pour"),
+    "power_via_array": ("A net with this many vias in one array is a supply: a signal changes "
+                        "layer through one via. 0 turns this off.", "supply_detect", "array"),
+    "power_via_pitch_mm": ("Vias this close to the next stand in one array.",
+                           "supply_detect", "pitch"),
+    "cap_rise_time_budget": ("The cap's mounted inductance L slows the edge by 1.1 L / Z0. "
+                             "This share of the edge rate is allowed; it picks the package.",
+                             "edge_rate", "slow"),
+    "cap_value": ("A value for every stitching cap instead of the one picked from the edge "
+                  "rate; blank picks it. The package is still picked.",),
+    "voltage_derating": ("The cap's voltage rating is at least this many times the voltage "
+                         "between its two planes, rounded up to a standard rating.",
+                         "derating", "derate", "rating"),
+    "min_voltage_rating_v": ("No stitching cap is rated below this.", "derating", "min"),
+}
+
+
+def setting_tip(name: str) -> str:
+    """The tooltip of the setting ``name``, with its drawing where it has one."""
+    text, *art = TIPS.get(name, ("",))
+    return art_tip(text, *art) if art else text
+
+
 class SettingsPanel(QWidget):
     """The scan settings: the few that matter up top, every rule under Advanced."""
 
     BASIC = ("check_splits", "check_via_caps", "check_via_stitch", "check_voids",
-             "max_cap_distance_mm", "via_cap_distance_mm", "signals_per_cap", "cap_value",
-             "cap_package")
+             "edge_rate_ps", "trace_impedance_ohm", "max_cap_distance_mm",
+             "via_cap_distance_mm", "signals_per_cap")
 
     def __init__(self, settings: ScanSettings, parent=None):
         super().__init__(parent)
         self._fields = {}
         layout = QVBoxLayout(self)
-        intro = QLabel("Pick the nets to scan, or scan them all. Every net scanned is taken "
-                       "as a fast digital signal, and the defaults lean towards more "
-                       "stitching.")
+        intro = QLabel("Pick the nets to scan, or scan them all. Each net is taken as a fast "
+                       "digital signal with the default edge rate and impedance unless given "
+                       "its own (double-click a grey value); the fastest signal a cap returns "
+                       "picks its package.")
         intro.setWordWrap(True)
         intro.setStyleSheet(HINT)
         layout.addWidget(intro)
@@ -115,6 +186,7 @@ class SettingsPanel(QWidget):
         QVBoxLayout(nets_box).addWidget(NetPicker())
         self.nets: NetPicker = nets_box.layout().itemAt(0).widget()
         self.nets.set_scan_all(settings.scan_all_nets)
+        self.nets.set_defaults(settings.edge_rate_ps, settings.trace_impedance_ohm)
         layout.addWidget(nets_box, 1)
         basic = QFormLayout()
         layout.addLayout(basic)
@@ -127,12 +199,17 @@ class SettingsPanel(QWidget):
         for name, label in DESCRIPTIONS.items():
             w = self._editor(getattr(settings, name), name in self.CAN_BE_OFF)
             self._fields[name] = w
-            if name in self.BASIC:
-                basic.addRow(label, w)
-            else:
-                adv.addRow(label, w)
-                self._adv_widgets.append(w)
-                self._adv_widgets.append(adv.labelForField(w))
+            form = basic if name in self.BASIC else adv
+            form.addRow(label, w)
+            tip = setting_tip(name)
+            for part in (w, form.labelForField(w)):
+                part.setToolTip(tip)
+            if form is adv:
+                self._adv_widgets += [w, adv.labelForField(w)]
+        for name in ("edge_rate_ps", "trace_impedance_ohm"):
+            self._fields[name].valueChanged.connect(lambda _: self.nets.set_defaults(
+                self._fields["edge_rate_ps"].value(),
+                self._fields["trace_impedance_ohm"].value()))
         self.ignore = QLineEdit(", ".join(settings.ignore_nets))
         self.ignore.setPlaceholderText("e.g. TP*, LED_*")
         self.extra = QLineEdit(", ".join(settings.extra_plane_nets))
@@ -171,7 +248,7 @@ class SettingsPanel(QWidget):
         elif isinstance(value, float):
             w = QDoubleSpinBox()
             w.setDecimals(2)
-            w.setRange(0.0, 1000.0)
+            w.setRange(0.0, 100000.0)
             w.setSingleStep(0.1)
             w.setValue(value)
         else:
@@ -190,6 +267,9 @@ class SettingsPanel(QWidget):
         self.ignore.setText(", ".join(s.ignore_nets))
         self.extra.setText(", ".join(s.extra_plane_nets))
         self.nets.set_scan_all(s.scan_all_nets)      # the ticked nets belong to the board
+        self.nets.set_defaults(s.edge_rate_ps, s.trace_impedance_ohm)
+        if s.net_edge_rate_ps or s.net_impedance_ohm:
+            self.nets.set_speeds(s.net_edge_rate_ps, s.net_impedance_ohm)
 
     def value(self) -> ScanSettings:
         s = ScanSettings()
@@ -206,6 +286,7 @@ class SettingsPanel(QWidget):
         s.extra_plane_nets = split(self.extra.text())
         s.scan_all_nets = self.nets.scan_all()
         s.selected_nets = self.nets.selected()
+        s.net_edge_rate_ps, s.net_impedance_ohm = self.nets.speeds()
         return s
 
 
@@ -219,6 +300,8 @@ class MainWindow(QMainWindow):
         self._task: Optional[Task] = None
         self._data: Optional[MapData] = None
         self._preview: Optional[ScanResult] = None     # the board as read, before a scan
+        self._installed: dict = {}      # cap or via id -> what became of it on the board
+        self._steps: Optional[dict] = None
         self.setWindowTitle(f"CapScan {__version__}: stitching capacitor advisor")
         self.resize(1500, 950)
         self._qsettings = QSettings("CapScan", "CapScan")
@@ -248,7 +331,7 @@ class MainWindow(QMainWindow):
         from qtpy.QtCore import QTimer
         self._preview_timer = QTimer(self)
         self._preview_timer.setSingleShot(True)
-        self._preview_timer.setInterval(400)
+        self._preview_timer.setInterval(150)
         self._preview_timer.timeout.connect(self._show_preview)
         self.settings_panel.nets.changed.connect(self._picks_changed)
         self._update_actions()
@@ -364,6 +447,9 @@ class MainWindow(QMainWindow):
                                "(one undo step in KiCad)")
         self.act_clear = act("Clear markers", self.clear_markers,
                              "Remove the markers CapScan drew")
+        self.act_add = act("Add to board…", self.add_to_board,
+                           "Add the stitching capacitors, their vias and the return vias to "
+                           "the board in KiCad, keeping to the design rules (DRC checked)")
         tb.addSeparator()
         self.act_html = act("Export HTML…", self.export_html)
         self.act_pdf = act("Export PDF…", self.export_pdf)
@@ -371,7 +457,7 @@ class MainWindow(QMainWindow):
                             "Save the scan (JSON) to compare or reopen later")
         tb.addSeparator()
         act("Help", self.show_help)
-        act("About", self.show_about)
+        act("About", self.show_about, "Version, author, links, and what to put in a bug report")
 
     def _update_actions(self):
         has = self.result is not None
@@ -386,6 +472,8 @@ class MainWindow(QMainWindow):
             a.setEnabled(has and not running)
         self.act_markers.setEnabled(has and live and not running)
         self.act_clear.setEnabled(live and not running)
+        self.act_add.setEnabled(has and live and not running and self._steps is None
+                                and bool(self.result.caps or self.result.stitch_vias))
 
     # ------------------------------------------------------------------ settings
     def _restore_settings(self):
@@ -398,11 +486,14 @@ class MainWindow(QMainWindow):
 
     def _save_settings(self, s: ScanSettings):
         d = s.to_dict()
-        d.pop("selected_nets")
+        for k in ("selected_nets", "net_edge_rate_ps", "net_impedance_ohm"):
+            d.pop(k)
         self._qsettings.setValue(SETTINGS_KEY, json.dumps(d))
         name = self._board_name()
         if name:
             self._qsettings.setValue(NETS_KEY + name, json.dumps(s.selected_nets))
+            self._qsettings.setValue(SPEEDS_KEY + name, json.dumps(
+                {"edge_ps": s.net_edge_rate_ps, "impedance": s.net_impedance_ohm}))
 
     def _board_name(self) -> str:
         if self.snapshot is not None:
@@ -418,6 +509,16 @@ class MainWindow(QMainWindow):
             return list(json.loads(self._qsettings.value(NETS_KEY + name, "[]") or "[]"))
         except (ValueError, TypeError):
             return []
+
+    def _saved_speeds(self):
+        """The edge rates and impedances set per net for this board."""
+        name = self._board_name()
+        try:
+            d = json.loads(self._qsettings.value(SPEEDS_KEY + name, "{}") or "{}")
+            return ({k: float(v) for k, v in d.get("edge_ps", {}).items()},
+                    {k: float(v) for k, v in d.get("impedance", {}).items()})
+        except (ValueError, TypeError, AttributeError):
+            return {}, {}
 
     # ------------------------------------------------------------------ the net list
     def load_board(self):
@@ -442,7 +543,8 @@ class MainWindow(QMainWindow):
             snap, preview = out
             self.snapshot, self._preview = snap, preview
             self.settings_panel.nets.blockSignals(True)
-            self.settings_panel.nets.set_nets(preview.candidate_nets, self._saved_nets())
+            self.settings_panel.nets.set_nets(preview.candidate_nets, self._saved_nets(),
+                                              *self._saved_speeds())
             self.settings_panel.nets.blockSignals(False)
             self._show_preview()
 
@@ -553,10 +655,27 @@ class MainWindow(QMainWindow):
         picker = self.settings_panel.nets
         nets = p.candidate_nets if picker.scan_all() else picker.selected()
         p = replace(p, track_heat=highlight_tracks(self.snapshot, nets))
-        self._data = MapData(self.snapshot, p)
+        data = self._data
+        if (data is None or data.cache.get("preview") is not self._preview
+                or data.snap is not self.snapshot):
+            self._data = MapData(self.snapshot, p)
+            self._data.cache["preview"] = self._preview
+            self._show_board(self.snapshot, p)
+            self.map.set_data(self._data)
+            self._show_3d()
+            return
+        # Other nets picked: the planes stay as they are (slow to work out and draw), and
+        # only the tracks are drawn again.
+        data.use_result(p)
         self._show_board(self.snapshot, p)
-        self.map.set_data(self._data)
-        self._show_3d()
+        self.map.update_tracks()
+        if self.viewer is not None:
+            from capscan.report.scene3d import build_scene
+            try:
+                self.viewer.show_tracks(build_scene(data))
+            except Exception as e:  # noqa: BLE001 - the rest of the window still works
+                log.exception("3D view failed")
+                self._log(f"3D view failed: {e}", logging.WARNING)
 
     def _picks_changed(self):
         self._update_actions()
@@ -564,6 +683,8 @@ class MainWindow(QMainWindow):
             self._preview_timer.start()     # redrawn once the clicking stops
 
     def _show_result(self, snap: BoardSnapshot, r: ScanResult):
+        if r is not self.result:
+            self._installed = {}
         self.snapshot, self.result = snap, r
         self._data = MapData(snap, r)
         self._show_board(snap, r)
@@ -641,12 +762,14 @@ class MainWindow(QMainWindow):
         lines = [f"<b>{c['caps']}</b> stitching caps to add",
                  f"<b>{c['stitch_vias']}</b> return vias to add",
                  f"{c['splits']} split crossings, {c['via_changes']} vias changing plane",
-                 f"{c['existing_credited']} existing caps credited"]
+                 f"{c['existing_credited']} existing caps credited, "
+                 f"{c['existing_decoupling']} decoupling caps found"]
         if c["voids"]:
             lines.append(f"<span style='{ERROR}'>{c['voids']} voids: reroute or fill</span>")
         if c["decoupling_flags"]:
             lines.append(f"<span style='{ERROR}'>{c['decoupling_flags']} returns would use "
                          "decoupling caps</span>")
+        lines.append(f"<span style='{HINT}'>{part_basis(r.settings)}</span>")
         for w in r.warnings:
             lines.append(f"<span style='color:#ffc060'>{w}</span>")
         self.summary_label.setText("<br>".join(lines))
@@ -654,16 +777,17 @@ class MainWindow(QMainWindow):
     def _fill_tables(self, r: ScanResult):
         from capscan.report import html as rep
         fill_table(self.caps_table,
-                   ["Cap", "Value", "Dielectric", "Package", "Rating", "Net A", "Net B", "X",
-                    "Y", "Side", "Angle", "Planes on", "Signals", "Signal nets", "Note"],
-                   [(c.id, c.value, c.dielectric, c.package, f"{c.voltage_v:g} V", c.net_a,
+                   ["Cap", "Qty", "Value", "Dielectric", "Package", "Rating", "Net A", "Net B",
+                    "X", "Y", "Side", "Angle", "Planes on", "Signals", "Signal nets", "Note",
+                    "On board"],
+                   [(c.id, c.count, c.value, c.dielectric, c.package, f"{c.voltage_v:g} V", c.net_a,
                      c.net_b, c.position[0], c.position[1], c.side, c.angle_deg,
                      ", ".join(r.layer_name(l) for l in c.ref_layers), len(c.signals),
-                     ", ".join(c.signals), c.note) for c in r.caps],
+                     ", ".join(c.signals), c.note, self._installed.get(c.id, ""))
+                    for c in r.caps],
                    ids=[c.id for c in r.caps])
         fill_table(self.signals_table,
-                   ["Signal", "Routing layers", "Reference layers", "Split crossings",
-                    "Plane-changing vias", "Voids", "Returned by"], list(rep._signal_rows(r)))
+                   rep.SIGNAL_HEAD, list(rep._signal_rows(r)))
         fill_table(self.crossings_table,
                    ["Id", "Kind", "Signal", "Layer", "Reference", "Net before", "Net after", "X",
                     "Y", "Gap mm", "h mm", "Severity", "Fix", "By", "Decoupling caps"],
@@ -749,6 +873,154 @@ class MainWindow(QMainWindow):
             return
         self._log(f"Removed {n} marker items.")
 
+    # ------------------------------------------------------------------ adding to the board
+    def add_to_board(self):
+        from qtpy.QtWidgets import QApplication, QDialog
+
+        from capscan.gui.add_dialog import ADD_ALL, AddDialog
+        from capscan.kicad.install import Installer
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            inst = Installer(self.kicad, self.board, self.snapshot, self.result)
+            dlg = AddDialog(inst, self, self._next_first_ref(inst))
+        except Exception as e:  # noqa: BLE001
+            log.exception("Add to board")
+            QMessageBox.warning(self, "CapScan", f"Could not get ready to add parts: {e}")
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        if dlg.exec() != QDialog.Accepted:
+            return
+        opts = dlg.options()
+        self._qsettings.setValue(FIRST_REF_KEY + self._board_name(),
+                                 f"{opts.prefix}{opts.start}")
+        if dlg.mode == ADD_ALL:
+            self._run(lambda p: self._with(inst, p).add_all(opts), self._added)
+        else:
+            self._start_steps(inst, opts)
+
+    def _next_first_ref(self, inst) -> str:
+        """The first reference given last time for this board, moved past what is on the
+        board now (so adding again carries on the numbering); "" for none."""
+        from capscan.analysis.install import next_references, split_reference
+        split = split_reference(str(self._qsettings.value(FIRST_REF_KEY + self._board_name(),
+                                                          "") or ""))
+        if split is None:
+            return ""
+        return next_references(inst.taken, split[0], split[1], 1)[0]
+
+    @staticmethod
+    def _with(inst, progress):
+        inst.progress = progress
+        return inst
+
+    def _record(self, out) -> None:
+        from capscan.kicad.install import Added
+        if isinstance(out, Added):
+            self._installed[out.ident] = ", ".join(out.references) or "added"
+        else:
+            self._installed[out.ident] = f"not added: {out.reason}"
+
+    def _added(self, report):
+        for out in report.added + report.skipped:
+            self._record(out)
+        for line in report.lines():
+            self._log(line, logging.WARNING if "not added" in line or line.startswith(" ")
+                      else logging.INFO)
+        self._log(f"Added {len(report.added)}, not added {len(report.skipped)}; DRC finds "
+                  "nothing new. Scan again to check the board with them.")
+        self._fill_tables(self.result)
+        QMessageBox.information(
+            self, "CapScan", f"{len(report.added)} added, {len(report.skipped)} not added "
+            "(the log says why). Undo in KiCad takes the added ones off.")
+
+    def _start_steps(self, inst, opts):
+        from capscan.gui.add_dialog import StepPanel
+        queue = [c.id for c in self.result.caps] + [v.id for v in self.result.stitch_vias]
+        panel = StepPanel(self)
+        self._steps = {"inst": inst, "opts": opts, "queue": queue, "total": len(queue),
+                       "index": 0, "current": None, "kept": [], "panel": panel}
+        panel.keep.connect(self._step_next)
+        panel.take_off.connect(self._step_take_off)
+        panel.rest.connect(self._step_rest)
+        panel.stop.connect(self._step_stop)
+        panel.show()
+        panel.busy("Running DRC before adding…")
+        self._run(lambda p: self._with(inst, p).begin_steps(), lambda _: self._step_next())
+
+    def _step_next(self):
+        s = self._steps
+        if s is None:
+            return
+        if not s["queue"]:
+            self._step_stop()
+            return
+        ident = s["queue"].pop(0)
+        s["index"] += 1
+        s["panel"].busy(f"Adding {ident}…")
+        inst, opts = s["inst"], s["opts"]
+        self._run(lambda p: self._with(inst, p).add_one(ident, opts), self._step_shown)
+
+    def _step_shown(self, out):
+        from capscan.gui.add_dialog import describe
+        from capscan.kicad.install import Added
+        s = self._steps
+        if s is None:
+            return
+        self._record(out)
+        self._fill_tables(self.result)
+        text = describe(self.result, out.ident)
+        if isinstance(out, Added):
+            s["current"] = out
+            s["kept"].append(out)
+            refs = ", ".join(out.references)
+            s["panel"].show_added(s["index"], s["total"], out.ident,
+                                  (f"As {refs}: " if refs else "") + text
+                                  + "".join(f"<br>{n}" for n in out.notes))
+        else:
+            s["current"] = None
+            s["panel"].show_skipped(s["index"], s["total"], out.ident,
+                                    f"{text}<br>{out.reason}"
+                                    + "".join(f"<br>{v}" for v in out.violations[:5]))
+
+    def _step_take_off(self):
+        s = self._steps
+        if s is None or s["current"] is None:
+            self._step_next()
+            return
+        out, inst = s["current"], s["inst"]
+        s["panel"].busy(f"Taking {out.ident} off…")
+        s["kept"].remove(out)
+        self._installed[out.ident] = "taken off"
+        self._run(lambda p: self._with(inst, p).remove([out], f"CapScan: take {out.ident} off"),
+                  lambda _: self._step_next())
+
+    def _step_rest(self):
+        """Add what is left in one go; DRC then checks it with the parts kept so far."""
+        s, self._steps = self._steps, None
+        if s is None:
+            return
+        s["panel"].close()
+        inst, opts, left = s["inst"], s["opts"], set(s["queue"])
+        caps = [c for c in self.result.caps if c.id in left]
+        vias = [v for v in self.result.stitch_vias if v.id in left]
+        self._run(lambda p: self._with(inst, p).add_all(opts, caps, vias, kept=s["kept"]),
+                  self._added)
+
+    def _step_stop(self):
+        """End a step-through: DRC checks the parts kept (once, not after each)."""
+        s, self._steps = self._steps, None
+        if s is not None:
+            s["panel"].close()
+            inst, opts, kept = s["inst"], s["opts"], s["kept"]
+            if kept:
+                self._log(f"Step through ended with {len(kept)} kept; running DRC on them.")
+                self._run(lambda p: self._with(inst, p).finish_steps(opts, kept),
+                          self._added)
+            else:
+                self._log("Step through ended: nothing added.")
+        self._update_actions()
+
     def _default_path(self, suffix: str) -> str:
         snap = self.snapshot
         base = Path(snap.project_dir) if snap and snap.project_dir else Path.home()
@@ -796,15 +1068,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "CapScan", f"The user guide is at {help_file}")
 
     def show_about(self):
-        QMessageBox.about(
-            self, "About CapScan",
-            f"<b>CapScan {__version__}</b><br>Stitching capacitor advisor for KiCad.<br><br>"
-            "Finds every signal whose return current meets a plane split, a void, or a via "
-            "onto another plane, and says where to put stitching capacitors and return "
-            "vias.<br><br>"
-            "<a href='https://github.com/drewsum/Kicad-Cap-Scan'>"
-            "github.com/drewsum/Kicad-Cap-Scan</a><br>"
-            f"Log: {capscan_app.LOG_PATH}")
+        from capscan.gui.about import AboutDialog
+        kicad = self.snapshot.kicad_version if self.snapshot is not None else ""
+        AboutDialog(self, kicad_version=kicad).exec()
 
     def closeEvent(self, event):
         if self.viewer is not None:

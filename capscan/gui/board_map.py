@@ -12,7 +12,7 @@ from qtpy.QtCore import Signal
 from qtpy.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from capscan.analysis.results import HEAT_KINDS, HEAT_LABELS
-from capscan.report.maps import DARK, MapData, draw_map, legend_handles
+from capscan.report.maps import DARK, MapData, draw_map, legend_handles, redraw_preview_tracks
 
 #: A click this near (in mm) a capacitor or crossing picks it.
 PICK_MM = 1.2
@@ -64,6 +64,7 @@ class BoardMap(QWidget):
         super().__init__(parent)
         self._data: Optional[MapData] = None
         self._highlight: Optional[str] = None
+        self._ax = self._tracks = None          # a preview's tracks, redrawn alone
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         bar = QHBoxLayout()
@@ -121,9 +122,20 @@ class BoardMap(QWidget):
                     return              # redrawn by the change
         self.redraw()
 
+    def update_tracks(self):
+        """Other nets picked in a preview: draw the tracks again, and only them (the
+        planes are what is slow to draw)."""
+        if self._ax is None or self._data is None or not self._data.result.preview:
+            self.redraw()
+            return
+        self._tracks = redraw_preview_tracks(self._ax, self._data, self.layer.currentData(),
+                                             self._tracks)
+        self.canvas.draw_idle()
+
     def redraw(self):
         self.fig.clear()
-        ax = self.fig.add_subplot(111)
+        ax = self._ax = self.fig.add_subplot(111)
+        self._tracks = None
         if self._data is None:
             ax.set_facecolor(DARK.axes)
             ax.text(0.5, 0.5, "Run a scan to see where stitching capacitors go",
@@ -132,8 +144,8 @@ class BoardMap(QWidget):
             self.canvas.draw_idle()
             return
         layer = self.layer.currentData()
-        draw_map(ax, self._data, layer, DARK,
-                 highlight=self._highlight, labels=self.labels.isChecked())
+        self._tracks = draw_map(ax, self._data, layer, DARK,
+                                highlight=self._highlight, labels=self.labels.isChecked())
         layers = self._data.reference_layers() if layer is None else [layer]
         leg = ax.legend(handles=legend_handles(DARK, self._data, layers), fontsize=7,
                         loc="upper left", bbox_to_anchor=(1.01, 1.0), facecolor="#2a2a2a",

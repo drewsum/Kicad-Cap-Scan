@@ -2,6 +2,8 @@ name: Release zip
 
 # Attaches CapScan-<tag>.zip to each published release: a CapScan/ folder ready to drop
 # into KiCad's plugins folder, without the tests and CI.
+# GitHub counts downloads of uploaded assets only, not of the automatic "Source code"
+# archives, so this is also what makes release downloads countable (stats.yml adds them up).
 
 on:
   release:
@@ -27,6 +29,7 @@ jobs:
           ref: ${{ github.event.release.tag_name || inputs.tag }}
       - name: Build zip
         run: git archive --format=zip --prefix=CapScan/ -o "CapScan-$TAG.zip" HEAD -- . ':!tests' ':!.github'
+      # Replacing an existing asset would reset its download count, so leave it alone.
       - name: Upload to the release
         run: |
           if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qx "CapScan-$TAG.zip"; then

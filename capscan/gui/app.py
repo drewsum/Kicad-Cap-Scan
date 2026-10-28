@@ -259,22 +259,149 @@ def make_app():
 def bring_to_front(win) -> None:
     """Show ``win`` over KiCad, which otherwise keeps the focus it had when it started us."""
     from qtpy.QtCore import Qt
-    win.show()
+    if win.isMinimized():
+        win.showNormal()
     win.setWindowState((win.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive)
+    win.show()
     win.raise_()
     win.activateWindow()
+    if sys.platform == "win32":
+        try:
+            _win32_foreground(int(win.winId()))
+        except Exception:  # noqa: BLE001 - raise_() above is the fallback
+            log.debug("Could not force CapScan to the foreground", exc_info=True)
 
 
-def run(kicad=None, board=None, snapshot=None) -> int:
+def _win32_foreground(hwnd: int) -> None:
+    """Windows ignores activateWindow() from a process the user did not just click, which
+    is what CapScan is once it has started up behind KiCad (#3). Borrow the foreground
+    window's input queue for the hand-over; if Windows still refuses, at least put the
+    window on top of the others. Copied from KiPI (``kipi/gui/single_instance.py``)."""
+    import ctypes
+    from ctypes import wintypes
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetWindowThreadProcessId.argtypes = (wintypes.HWND, ctypes.c_void_p)
+    user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
+    user32.BringWindowToTop.argtypes = (wintypes.HWND,)
+    user32.SetWindowPos.argtypes = (wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_int, ctypes.c_uint)
+    fg = user32.GetForegroundWindow()
+    if fg == hwnd:
+        return
+    mine = kernel32.GetCurrentThreadId()
+    theirs = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+    attached = bool(theirs and theirs != mine and user32.AttachThreadInput(mine, theirs, True))
+    try:
+        user32.BringWindowToTop(hwnd)
+        ok = user32.SetForegroundWindow(hwnd)
+    finally:
+        if attached:
+            user32.AttachThreadInput(mine, theirs, False)
+    if not ok:
+        flags = 0x0001 | 0x0002 | 0x0040          # SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW
+        user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)     # HWND_TOPMOST
+        user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)     # HWND_NOTOPMOST
+
+
+def _refocus(win) -> None:
+    """Once the event loop runs, try again: KiCad can take the focus back while the
+    window is being built."""
+    if win.isVisible() and not win.isActiveWindow():
+        bring_to_front(win)
+
+
+def start_splash():
+    """The QApplication, and the welcome screen shown on it (None if it cannot be), held
+    open until :func:`run` has opened the main window (#4). Shown before anything slow, so
+    CapScan answers the click at once."""
+    from capscan.gui.splash import show_splash
+    app = make_app()
+    splash = show_splash(app)
+    if splash is not None:
+        splash.hold()
+    return app, splash
+
+
+def set_status(splash, text: str) -> None:
+    """Say on the welcome screen what CapScan is doing."""
+    log.info("Starting: %s", text)
+    if splash is not None:
+        try:
+            splash.set_status(text)
+            from qtpy.QtWidgets import QApplication
+            QApplication.processEvents()
+        except RuntimeError:      # closed by a click; its widgets are gone
+            pass
+
+
+# What the main window needs, slowest first, with what the welcome screen says meanwhile.
+# A first start after a reboot reads these thousands of files from a cold disk.
+_PRELOAD = (
+    ("Loading NumPy and Shapely…", ("numpy", "shapely", "shapely.ops")),
+    ("Loading the 3D viewer…", ("pyvista", "pyvista.plotting", "matplotlib.figure")),
+    ("Loading the scanner…", ("capscan.analysis.scan", "capscan.report.maps",
+                              "capscan.report.scene3d")),
+)
+
+
+def preload(splash=None, preload=_PRELOAD) -> None:
+    """Import the main window's packages on a thread, keeping the welcome screen painted
+    and animated (and Windows from calling CapScan not responding) meanwhile. None of them
+    touch Qt. A package that fails here is left for the main window's own import to
+    report, on the UI thread. Copied from KiPI."""
+    import importlib
+    from qtpy.QtWidgets import QApplication
+
+    stage = [0]
+
+    def load():
+        for i, (_, modules) in enumerate(preload):
+            stage[0] = i
+            for m in modules:
+                try:
+                    importlib.import_module(m)
+                except Exception:  # noqa: BLE001 - imported again where it is used
+                    log.debug("Preloading %s failed", m, exc_info=True)
+
+    t0 = time.perf_counter()
+    set_status(splash, preload[0][0])
+    thread = threading.Thread(target=load, name="capscan-preload", daemon=True)
+    thread.start()
+    shown = 0
+    while thread.is_alive():
+        if stage[0] != shown:
+            shown = stage[0]
+            set_status(splash, preload[shown][0])
+        QApplication.processEvents()
+        thread.join(0.03)
+    log.info("Loaded CapScan's packages in %.1f s", time.perf_counter() - t0)
+
+
+def run(kicad=None, board=None, snapshot=None, splash=False) -> int:
     """Show the main window until it is closed. ``kicad`` / ``board`` are the live kipy
     connection the board is read from; ``snapshot`` opens a saved board instead (tests and
-    development)."""
-    app = make_app()
+    development). ``splash`` is the welcome screen from :func:`start_splash` if one was
+    shown already."""
+    if splash is False:
+        app, splash = start_splash()
+    else:
+        app = make_app()
+    preload(splash)
+    set_status(splash, "Opening the window…")
     from capscan.gui.main_window import MainWindow
 
     win = MainWindow(kicad=kicad, board=board, snapshot=snapshot)
     bring_to_front(win)
+    from qtpy.QtCore import QTimer
+    QTimer.singleShot(300, lambda: _refocus(win))
     log.info("Window open %.1f s after CapScan started", time.monotonic() - STARTED)
+    if splash is not None and splash.isVisible():
+        splash.set_status("Ready")
+        splash.raise_()     # over the new window until its loop has played
+        # Closing the splash hands the focus back to whatever is under it; keep it here.
+        splash.closed.connect(lambda: _refocus(win))
+        splash.release()    # closes it now if it has played through, as starting was slow
     code = app.exec()
     task = getattr(win, "_task", None)
     if task is not None and task.isRunning():

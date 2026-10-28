@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="160" viewBox="0 0 280 160">
+  <rect x="0" y="0" width="280" height="160" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <!-- left: a cross-section, the net poured on two of four layers -->
+    <path d="M18,30 H124 M18,60 H124 M18,90 H124 M18,120 H124" stroke="{muted}" stroke-width="1" fill="none"/>
+    <path d="M18,60 H124 M18,120 H124" stroke="{pour}" stroke-width="7" fill="none"/>
+    <text x="71" y="146" fill="{pour}" text-anchor="middle" font-size="10">poured on layers</text>
+    <path d="M140,16 V140" stroke="{grid}" stroke-width="1.2" fill="none"/>
+    <!-- right: from above, vias standing in an array -->
+    <rect x="156" y="52" width="108" height="40" rx="4" fill="{grid}"/>
+    <circle cx="176" cy="72" r="7" stroke="{array}" stroke-width="2" fill="none"/>
+    <circle cx="198" cy="72" r="7" stroke="{array}" stroke-width="2" fill="none"/>
+    <circle cx="220" cy="72" r="7" stroke="{array}" stroke-width="2" fill="none"/>
+    <circle cx="242" cy="72" r="7" stroke="{array}" stroke-width="2" fill="none"/>
+    <circle cx="176" cy="72" r="2.5" fill="{array}"/>
+    <circle cx="198" cy="72" r="2.5" fill="{array}"/>
+    <circle cx="220" cy="72" r="2.5" fill="{array}"/>
+    <circle cx="242" cy="72" r="2.5" fill="{array}"/>
+    <path d="M176,98 V110 M198,98 V110 M178,104 H196" stroke="{pitch}" stroke-width="1.2" fill="none"/>
+    <text x="187" y="124" fill="{pitch}" text-anchor="middle" font-size="10">pitch</text>
+    <text x="210" y="146" fill="{array}" text-anchor="middle" font-size="10">vias in an array</text>
+    <text x="210" y="38" fill="{muted}" text-anchor="middle" font-size="10">a supply, not a signal</text>
+  </g>
+</svg>

@@ -85,7 +85,7 @@ def marker_items(result: ScanResult) -> list:
         items.append(_segment((x - dx, y - dy), (x + dx, y + dy)))
         side = "" if cap.side == "top" else " (bottom)"
         items.append(_text((x + CAP_RADIUS_MM + 0.2, y),
-                           f"{PREFIX} {cap.id} {cap.value} {cap.voltage_v:g}V{side}"))
+                           f"{PREFIX} {cap.id} {cap.amount} {cap.voltage_v:g}V{side}"))
     for sv in result.stitch_vias:
         items.append(_circle(sv.position, VIA_RADIUS_MM))
         items.append(_text((sv.position[0] + VIA_RADIUS_MM + 0.2, sv.position[1]),

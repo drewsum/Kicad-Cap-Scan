@@ -21,15 +21,17 @@ def main() -> int:
     # pipe blocks the writer forever. Send everything to this session's log folder.
     capscan_app.detach_std_streams()
     os.environ.setdefault("QT_API", "pyside6")
-    app = capscan_app.make_app()
+    _app, splash = capscan_app.start_splash()     # at once, before anything slow (#4)
+    capscan_app.set_status(splash, "Connecting to KiCad…")
     try:
         kicad, board = connect(progress=ProgressReporter())
     except ExtractionError as e:
+        if splash is not None:
+            splash.close()
         from qtpy.QtWidgets import QMessageBox
         QMessageBox.critical(None, "CapScan", f"{e}\n\nLog: {capscan_app.LOG_PATH}")
         return 1
-    del app
-    return run(kicad=kicad, board=board)
+    return run(kicad=kicad, board=board, splash=splash)
 
 
 if __name__ == "__main__":

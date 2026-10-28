@@ -14,7 +14,7 @@ import pyvista as pv
 from pyvistaqt import QtInteractor
 from qtpy.QtWidgets import QVBoxLayout, QWidget
 
-from capscan.report.maps import NET_COLORS
+from capscan.report.maps import NET_COLORS, PREVIEW_DIM, layer_color
 from capscan.report.scene3d import Scene
 
 _BOARD_COLOR = (0.15, 0.40, 0.20)
@@ -23,8 +23,17 @@ _VIA_COLOR = (0.75, 0.50, 1.0)
 _COLD_TRACK = (0.55, 0.55, 0.55)
 #: Heat below this is transparent, so the planes and routing show through.
 _HEAT_OPACITY = [0.0, 0.0, 0.35, 0.6, 0.75, 0.85, 0.9]
-_BAR = dict(title="Crossing density", n_labels=3, fmt="%.1f", color="#cccccc",
-            vertical=True, position_x=0.88, position_y=0.1, height=0.5, width=0.04)
+# The scale bar sits near the view's right edge (next to the setup panes), so it covers as
+# little of the board as it can, with room for its title (wider than the bar) to the right.
+_BAR_RIGHT = 0.975
+_BAR_WIDTH = 0.03
+_BAR_Y, _BAR_HEIGHT = 0.25, 0.5
+
+
+def _bar_args(title: str, fmt: str) -> dict:
+    return dict(title=title, vertical=True, position_x=_BAR_RIGHT - _BAR_WIDTH,
+                position_y=_BAR_Y, height=_BAR_HEIGHT, width=_BAR_WIDTH, fmt=fmt,
+                title_font_size=14, color="white", label_font_size=12)
 
 
 def _lines(segments: List[np.ndarray]) -> Optional[pv.PolyData]:
@@ -47,6 +56,11 @@ def _polyline(rings: List[np.ndarray]) -> Optional[pv.PolyData]:
     return pv.PolyData(np.vstack(pts), lines=np.asarray(cells))
 
 
+def _layer_rgb(layers: List[int]) -> np.ndarray:
+    return np.array([[int(layer_color(l)[i:i + 2], 16) for i in (1, 3, 5)] for l in layers],
+                    dtype=np.uint8)
+
+
 class Viewer3D(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -60,6 +74,34 @@ class Viewer3D(QWidget):
         self._scene: Optional[Scene] = None
         self._actors: Dict[str, list] = {}
         self._hidden_layers: set = set()
+        self._hidden_groups: set = set()        # "tracks", "caps", ... ticked off
+
+    def _preview_tracks(self, scene: Scene):
+        """Before a scan: the routing in its layers' colors, the picked nets solid and wider
+        and the rest faint (all solid when nothing is picked)."""
+        picked = bool(scene.hot_tracks)
+        hot = _lines([s for s, _ in scene.hot_tracks])
+        if hot is not None:
+            hot.cell_data["rgb"] = _layer_rgb(scene.hot_layers)
+            self._add("tracks", hot, scalars="rgb", rgb=True, line_width=4,
+                      render_lines_as_tubes=True)
+        cold = _lines(scene.cold_tracks)
+        if cold is not None:
+            cold.cell_data["rgb"] = _layer_rgb(scene.cold_layers)
+            self._add("tracks", cold, scalars="rgb", rgb=True, line_width=1.5,
+                      opacity=PREVIEW_DIM if picked else 1.0)
+
+    def show_tracks(self, scene: Scene):
+        """A preview with other nets picked: replace the tracks, keeping the rest of the
+        scene and the view."""
+        if self._scene is None or not scene.preview:
+            self.show_scene(scene, keep_camera=True)
+            return
+        for actor in self._actors.pop("tracks", []):
+            self.plotter.remove_actor(actor, render=False)
+        self._scene = scene
+        self._preview_tracks(scene)
+        self._apply_visibility()
 
     def clear(self):
         self.plotter.clear()
@@ -87,7 +129,8 @@ class Viewer3D(QWidget):
 
         nets = sorted({net for _, net in scene.plane_edges})
         for (layer, net), rings in scene.plane_edges.items():
-            color = NET_COLORS[nets.index(net) % len(NET_COLORS)]
+            color = (layer_color(layer) if scene.preview
+                     else NET_COLORS[nets.index(net) % len(NET_COLORS)])
             self._add(f"layer{layer}", _polyline(rings), color=color, line_width=2)
 
         for i, sheet in enumerate(scene.sheets):
@@ -99,15 +142,22 @@ class Viewer3D(QWidget):
             grid.point_data["heat"] = sheet.values[::-1].ravel(order="C")
             self._add(f"layer{sheet.layer}", grid, scalars="heat", cmap="inferno", clim=(0, 1),
                       opacity=_HEAT_OPACITY, lighting=False, show_scalar_bar=i == 0,
-                      scalar_bar_args=_BAR)
+                      scalar_bar_args=_bar_args("Transitions", "%.1f"))
+        for bar in p.scalar_bars.values():
+            bar.SetTextPositionToPrecedeScalarBar()     # value ticks left of the bar
 
-        hot = _lines([s for s, _ in scene.hot_tracks])
+        if scene.preview:
+            self._preview_tracks(scene)
+            hot = None
+        else:
+            hot = _lines([s for s, _ in scene.hot_tracks])
         if hot is not None:
             hot.cell_data["heat"] = np.array([h for _, h in scene.hot_tracks])
             self._add("tracks", hot, scalars="heat", cmap="inferno", clim=(0, 1), line_width=4,
                       render_lines_as_tubes=True, show_scalar_bar=False)
-        self._add("tracks", _lines(scene.cold_tracks), color=_COLD_TRACK, line_width=1.5,
-                  opacity=0.6)
+        if not scene.preview:
+            self._add("tracks", _lines(scene.cold_tracks), color=_COLD_TRACK, line_width=1.5,
+                      opacity=0.6)
 
         for _, xyz, angle, _ in scene.caps:
             a = math.radians(angle)
@@ -147,7 +197,8 @@ class Viewer3D(QWidget):
 
     def _apply_visibility(self):
         for group, actors in self._actors.items():
-            shown = not (group.startswith("layer") and int(group[5:]) in self._hidden_layers)
+            shown = group not in self._hidden_groups and not (
+                group.startswith("layer") and int(group[5:]) in self._hidden_layers)
             for a in actors:
                 try:
                     a.SetVisibility(shown)
@@ -156,12 +207,8 @@ class Viewer3D(QWidget):
         self.plotter.render()
 
     def set_group_visible(self, group: str, visible: bool):
-        for a in self._actors.get(group, []):
-            try:
-                a.SetVisibility(visible)
-            except AttributeError:
-                pass
-        self.plotter.render()
+        (self._hidden_groups.discard if visible else self._hidden_groups.add)(group)
+        self._apply_visibility()
 
     def focus(self, xy, span_mm: float = 8.0):
         if self._scene is None:

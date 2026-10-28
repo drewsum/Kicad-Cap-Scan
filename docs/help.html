@@ -60,8 +60,9 @@ code { background: #eee; padding: 1px 4px; border-radius: 3px; }
     the gap, the dielectric height, and how it is fixed.</td></tr>
   <tr><th>Via Transitions</th><td>Every via that moves a signal onto a different reference
     plane, and whether it needs a capacitor or a return via.</td></tr>
-  <tr><th>Existing Caps</th><td>Capacitors already between two plane nets. Those next to an
-    IC pin are decoupling caps and are never counted as stitching caps.</td></tr>
+  <tr><th>Existing Caps</th><td>Capacitors already between two plane nets. Those with a pad
+    next to an IC pin on the same net are decoupling caps and are never counted as stitching
+    caps. The HTML report lists them all, including the ones no crossing reached.</td></tr>
 </table>
 <p>Double-click a row to find it on the map, aim the 3D view at it, and select its net (or
 part) in KiCad.</p>
@@ -100,6 +101,24 @@ treat as planes. The reasoning and sources for each default are in
   <li>a cross on each void.</li>
 </ul>
 <p><b>Clear markers</b> removes only what CapScan drew.</p>
+
+<h2>Adding the parts</h2>
+<p><b>Add to board…</b> puts the stitching capacitors on the board, each pad with a via to
+its plane and a short track to it, and adds the return vias. The dialog shows what it
+picked and lets each be changed:</p>
+<ul>
+  <li><b>Footprint</b> for each package: the one the board already uses most, else KiCad's
+    <code>Capacitor_SMD</code> one, or any <code>.kicad_mod</code> file.</li>
+  <li><b>Via size</b>, from the board's predefined sizes and net classes, and the <b>via
+    types</b> the board already uses (through vias otherwise).</li>
+  <li><b>First stitching cap</b>: its reference (say <code>C500</code>); the rest count
+    up, skipping references already on the board.</li>
+</ul>
+<p>DRC runs before and after; anything that breaks it is taken off again. <b>Add all</b> is
+one undo step in KiCad. <b>Step through</b> adds one part at a time, selects it in KiCad, names the
+signal nets it gives a return path and where each one's path breaks, and asks to keep it or take it off; DRC runs once before the first and once after the last, on
+all the parts kept. The parts are ordinary footprints: add them to the schematic
+under the references they were given.</p>
 
 <h2>When something is wrong</h2>
 <ul>
