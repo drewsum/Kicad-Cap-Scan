@@ -48,6 +48,20 @@ class Scene:
     cold_layers: List[int] = field(default_factory=list)    # the layer of each cold track
 
 
+def _plane_edges(data: MapData, layers, z) -> Dict[Tuple[int, str], List[np.ndarray]]:
+    edges: Dict[Tuple[int, str], List[np.ndarray]] = {}
+    for lid in layers:
+        for net, g in data.regions.get(lid, {}).items():
+            for p in iter_polygons(g.simplify(0.05)):
+                for k, ring in enumerate([p.exterior] + list(p.interiors)):
+                    a = np.asarray(ring.coords)
+                    if len(a) < 4 or (k > 0 and ring.length < MIN_HOLE_MM):
+                        continue        # small holes: antipads, thermal reliefs
+                    edges.setdefault((lid, net), []).append(
+                        np.column_stack([a[:, 0], -a[:, 1], np.full(len(a), z.get(lid, 0.0))]))
+    return edges
+
+
 def build_scene(data: MapData, zscale: float = 6.0) -> Scene:
     r: ScanResult = data.result
     snap = data.snap
@@ -69,16 +83,10 @@ def build_scene(data: MapData, zscale: float = 6.0) -> Scene:
         sheets.append(HeatSheet(h.layer, r.layer_name(h.layer), z.get(h.layer, 0.0), x, y,
                                 h.values))
 
-    edges: Dict[Tuple[int, str], List[np.ndarray]] = {}
-    for lid in data.reference_layers():
-        for net, g in data.regions.get(lid, {}).items():
-            for p in iter_polygons(g.simplify(0.05)):
-                for k, ring in enumerate([p.exterior] + list(p.interiors)):
-                    a = np.asarray(ring.coords)
-                    if len(a) < 4 or (k > 0 and ring.length < MIN_HOLE_MM):
-                        continue        # small holes: antipads, thermal reliefs
-                    edges.setdefault((lid, net), []).append(
-                        np.column_stack([a[:, 0], -a[:, 1], np.full(len(a), z.get(lid, 0.0))]))
+    layers = tuple(data.reference_layers())
+    edges = data.cache.get(("edges", zscale, layers))
+    if edges is None:           # the planes only change with the board: a preview redraw keeps them
+        edges = data.cache[("edges", zscale, layers)] = _plane_edges(data, layers, z)
 
     hot, cold, hot_layers, cold_layers = [], [], [], []
     signals = set(r.signal_nets)

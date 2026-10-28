@@ -92,7 +92,14 @@ class MapData:
         self.outline = [poly_to_shapely(p) for p in snap.outline]
         self.net_color = {n: NET_COLORS[i % len(NET_COLORS)]
                           for i, n in enumerate(sorted(planes))}
+        self.cache: dict = {}           # drawings of the planes, kept while they stay the same
         self.set_heat_kinds(heat_kinds)
+
+    def use_result(self, result: ScanResult):
+        """Show ``result`` over the same planes: a preview with other nets picked. The
+        planes (the slow part) are kept."""
+        self.result = result
+        self.set_heat_kinds(self.heat_kinds)
 
     def set_heat_kinds(self, kinds: Optional[Iterable[str]] = None):
         """Show the heat of these kinds of break (None: all), on the planes and tracks."""
@@ -138,8 +145,9 @@ def _poly_patches(ax, geom, color, alpha, edge=None):
 
 def draw_map(ax, data: MapData, ref_layer: Optional[int], theme: Theme = DARK,
              show_heat: bool = True, highlight: Optional[str] = None,
-             labels: bool = True) -> None:
-    """Draw one reference layer (None: every layer) and what crosses it on ``ax``."""
+             labels: bool = True):
+    """Draw one reference layer (None: every layer) and what crosses it on ``ax``. For a
+    preview, returns the tracks drawn (see :func:`redraw_preview_tracks`)."""
     from matplotlib.collections import LineCollection
 
     r = data.result
@@ -166,12 +174,11 @@ def draw_map(ax, data: MapData, ref_layer: Optional[int], theme: Theme = DARK,
             color = layer_color(lid) if r.preview else data.net_color.get(net, "#888888")
             _poly_patches(ax, g, color, theme.plane_alpha)
 
-    sig_layers = set()
-    for lid in layers:
-        sig_layers.update(data.signal_layers_over(lid))
+    sig_layers = _signal_layers(data, layers)
     signals = set(r.signal_nets)
+    tracks = None
     if r.preview:
-        _preview_tracks(ax, data, sig_layers)
+        tracks = _preview_tracks(ax, data, sig_layers)
     else:
         segs, colors = [], []
         import matplotlib
@@ -244,9 +251,26 @@ def draw_map(ax, data: MapData, ref_layer: Optional[int], theme: Theme = DARK,
         pad = 0.03 * max(x1 - x0, y1 - y0)
         ax.set_xlim(x0 - pad, x1 + pad)
         ax.set_ylim(y1 + pad, y0 - pad)          # KiCad's y points down
+    return tracks
 
 
-def _preview_tracks(ax, data: MapData, sig_layers) -> None:
+def _signal_layers(data: MapData, layers) -> set:
+    out = set()
+    for lid in layers:
+        out.update(data.signal_layers_over(lid))
+    return out
+
+
+def redraw_preview_tracks(ax, data: MapData, ref_layer: Optional[int], old=None):
+    """Draw a preview's tracks again, with other nets picked, leaving the rest of the map;
+    ``old`` is what :func:`draw_map` (or this) returned."""
+    if old is not None:
+        old.remove()
+    layers = data.reference_layers() if ref_layer is None else [ref_layer]
+    return _preview_tracks(ax, data, _signal_layers(data, layers))
+
+
+def _preview_tracks(ax, data: MapData, sig_layers):
     """The signal routing in its layers' colors, the picked nets solid and wider and the
     rest faint (KiCad's net highlight). With nothing picked every track is solid."""
     from matplotlib.collections import LineCollection
@@ -264,7 +288,9 @@ def _preview_tracks(ax, data: MapData, sig_layers) -> None:
         colors.append(to_rgba(layer_color(t.layer), 1.0 if hot else PREVIEW_DIM))
         widths.append(1.4 if hot and picked else 0.8)
     if segs:
-        ax.add_collection(LineCollection(segs, colors=colors, linewidths=widths, zorder=3))
+        return ax.add_collection(LineCollection(segs, colors=colors, linewidths=widths,
+                                                zorder=3))
+    return None
 
 
 def preview_layers(data: MapData, layers: Sequence[int]):

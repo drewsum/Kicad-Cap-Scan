@@ -263,7 +263,7 @@ class MainWindow(QMainWindow):
         from qtpy.QtCore import QTimer
         self._preview_timer = QTimer(self)
         self._preview_timer.setSingleShot(True)
-        self._preview_timer.setInterval(400)
+        self._preview_timer.setInterval(150)
         self._preview_timer.timeout.connect(self._show_preview)
         self.settings_panel.nets.changed.connect(self._picks_changed)
         self._update_actions()
@@ -587,10 +587,27 @@ class MainWindow(QMainWindow):
         picker = self.settings_panel.nets
         nets = p.candidate_nets if picker.scan_all() else picker.selected()
         p = replace(p, track_heat=highlight_tracks(self.snapshot, nets))
-        self._data = MapData(self.snapshot, p)
+        data = self._data
+        if (data is None or data.cache.get("preview") is not self._preview
+                or data.snap is not self.snapshot):
+            self._data = MapData(self.snapshot, p)
+            self._data.cache["preview"] = self._preview
+            self._show_board(self.snapshot, p)
+            self.map.set_data(self._data)
+            self._show_3d()
+            return
+        # Other nets picked: the planes stay as they are (slow to work out and draw), and
+        # only the tracks are drawn again.
+        data.use_result(p)
         self._show_board(self.snapshot, p)
-        self.map.set_data(self._data)
-        self._show_3d()
+        self.map.update_tracks()
+        if self.viewer is not None:
+            from capscan.report.scene3d import build_scene
+            try:
+                self.viewer.show_tracks(build_scene(data))
+            except Exception as e:  # noqa: BLE001 - the rest of the window still works
+                log.exception("3D view failed")
+                self._log(f"3D view failed: {e}", logging.WARNING)
 
     def _picks_changed(self):
         self._update_actions()

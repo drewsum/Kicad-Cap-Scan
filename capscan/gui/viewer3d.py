@@ -74,6 +74,7 @@ class Viewer3D(QWidget):
         self._scene: Optional[Scene] = None
         self._actors: Dict[str, list] = {}
         self._hidden_layers: set = set()
+        self._hidden_groups: set = set()        # "tracks", "caps", ... ticked off
 
     def _preview_tracks(self, scene: Scene):
         """Before a scan: the routing in its layers' colors, the picked nets solid and wider
@@ -89,6 +90,18 @@ class Viewer3D(QWidget):
             cold.cell_data["rgb"] = _layer_rgb(scene.cold_layers)
             self._add("tracks", cold, scalars="rgb", rgb=True, line_width=1.5,
                       opacity=PREVIEW_DIM if picked else 1.0)
+
+    def show_tracks(self, scene: Scene):
+        """A preview with other nets picked: replace the tracks, keeping the rest of the
+        scene and the view."""
+        if self._scene is None or not scene.preview:
+            self.show_scene(scene, keep_camera=True)
+            return
+        for actor in self._actors.pop("tracks", []):
+            self.plotter.remove_actor(actor, render=False)
+        self._scene = scene
+        self._preview_tracks(scene)
+        self._apply_visibility()
 
     def clear(self):
         self.plotter.clear()
@@ -184,7 +197,8 @@ class Viewer3D(QWidget):
 
     def _apply_visibility(self):
         for group, actors in self._actors.items():
-            shown = not (group.startswith("layer") and int(group[5:]) in self._hidden_layers)
+            shown = group not in self._hidden_groups and not (
+                group.startswith("layer") and int(group[5:]) in self._hidden_layers)
             for a in actors:
                 try:
                     a.SetVisibility(shown)
@@ -193,12 +207,8 @@ class Viewer3D(QWidget):
         self.plotter.render()
 
     def set_group_visible(self, group: str, visible: bool):
-        for a in self._actors.get(group, []):
-            try:
-                a.SetVisibility(visible)
-            except AttributeError:
-                pass
-        self.plotter.render()
+        (self._hidden_groups.discard if visible else self._hidden_groups.add)(group)
+        self._apply_visibility()
 
     def focus(self, xy, span_mm: float = 8.0):
         if self._scene is None:

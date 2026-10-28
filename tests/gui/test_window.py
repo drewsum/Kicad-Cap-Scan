@@ -201,6 +201,24 @@ def test_picked_nets_light_up_in_the_preview(app, make_window):
     assert not w._data.result.preview and "Not scanned yet" not in w.summary_label.text()
 
 
+def test_picking_nets_redraws_only_the_tracks(app, make_window, monkeypatch):
+    """#17: the planes are slow to work out and draw, and picking nets does not move them."""
+    from capscan.report import maps
+    w = make_window()
+    w.map.layer.setCurrentIndex(w.map.layer.findText("All reference layers"))
+    data, ax = w._data, w.map._ax
+    assert w.map._tracks in ax.collections
+    calls = []
+    real = maps.zone_regions
+    monkeypatch.setattr(maps, "zone_regions", lambda snap: calls.append(1) or real(snap))
+    w.settings_panel.nets.set_selected(["D0", "D2"])
+    _wait(app, lambda: w._data.track_heat == [1.0, 0.0, 1.0])
+    assert w._data is data and w.map._ax is ax and not calls       # the same planes
+    assert w.map._tracks in ax.collections                          # the new tracks drawn
+    assert sum(isinstance(c, type(w.map._tracks)) for c in ax.collections) == 1
+    assert "The 2 nets picked" in w.summary_label.text()
+
+
 def test_heat_tick_boxes_pick_the_heat_shown_on_both_tabs(app, make_window):
     from capscan.analysis.results import SPLIT, VIA_CAP, VIA_STITCH, VOID
     from capscan.report.maps import MapData

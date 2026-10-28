@@ -50,6 +50,10 @@ a release renames that heading to its version and date.
 - PDF report: the maps fit the page instead of being cut off at the right (their legends
   were lost), and a heading moves to the next page with the start of what it heads, a
   short note under it included, instead of ending a page on its own (#7).
+- Ticking nets before a scan no longer stalls the window: only the tracks are redrawn, not
+  the planes (about 3 s down to 50 ms on a 3400-track board) (#17).
+- Unticking *Signals*, *Caps* or the other groups on the 3D tab now keeps them hidden when
+  the view is redrawn.
 
 ## [0.1.0] - 2026-10-25
 
