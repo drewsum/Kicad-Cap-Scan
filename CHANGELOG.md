@@ -7,6 +7,8 @@ a release renames that heading to its version and date.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-27
+
 ### Added
 - *Add to board…* puts the stitching capacitors on the board in KiCad, each pad with a via
   to its plane, and adds the return vias. The footprint, via size and type, and the first
@@ -54,6 +56,9 @@ a release renames that heading to its version and date.
   the planes (about 3 s down to 50 ms on a 3400-track board) (#17).
 - Unticking *Signals*, *Caps* or the other groups on the 3D tab now keeps them hidden when
   the view is redrawn.
+- *Add to board* works with kicad-python 0.7: it failed on every part. That release cannot
+  flip a part, so caps meant for the bottom are left to place by hand, as on KiCad before
+  10.0.6.
 
 ## [0.1.0] - 2026-10-25
 
@@ -86,5 +91,6 @@ vias.
 - A trace ending on, or routed through, a through-hole pad or via of its own net is no
   longer reported as crossing a void at that pad's clearance hole.
 
-[Unreleased]: https://github.com/drewsum/Kicad-Cap-Scan/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/drewsum/Kicad-Cap-Scan/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/drewsum/Kicad-Cap-Scan/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/drewsum/Kicad-Cap-Scan/releases/tag/v0.1.0

@@ -102,7 +102,8 @@ def placed(src, *, position: Tuple[float, float], angle_deg: float, reference: s
     fp.position.x_nm, fp.position.y_nm = tx, ty
     fp.orientation.value_degrees = angle_deg % 360.0
     for f in ("symbol_path", "symbol_sheet_name", "symbol_sheet_filename", "parent"):
-        fp.ClearField(f)
+        if f in fp.DESCRIPTOR.fields_by_name:       # kicad-python 0.7 has no "parent"
+            fp.ClearField(f)
     for field in (fp.reference_field, fp.definition.reference_field):
         field.text.text.text = reference
     for field in (fp.value_field, fp.definition.value_field):

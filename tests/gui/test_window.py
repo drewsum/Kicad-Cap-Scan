@@ -286,7 +286,14 @@ def test_add_dialog_takes_the_first_reference(app):
     assert d.options().via_types == ["through"]
     d.first_ref.setText("100")
     assert not d.add_all.isEnabled() and not d.step.isEnabled()
-    assert AddDialog(inst, first_reference="CS4").first_ref.text() == "CS4"
+    d2 = AddDialog(inst, first_reference="CS4")
+    assert d2.first_ref.text() == "CS4"
+    # Without a parent, the dialogs would otherwise be freed as Python exits, after the
+    # QApplication: a crash once the tests are over.
+    from qtpy.QtCore import QEvent
+    for dlg in (d, d2):
+        dlg.deleteLater()
+    app.sendPostedEvents(None, QEvent.DeferredDelete)
 
 
 def test_step_through_names_the_signal_each_part_is_for(app):

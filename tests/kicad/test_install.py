@@ -17,6 +17,15 @@ from capscan.analysis.install import (  # noqa: E402
 )
 from capscan.kicad import design_rules, drc, install, sexpr  # noqa: E402
 
+def _kipy_flips():
+    from kipy.proto.board import board_commands_pb2
+    return hasattr(board_commands_pb2, "BoardFlipDirection")
+
+
+# The split board's cap goes on the bottom, which kicad-python before 0.8 cannot flip to.
+needs_flip = pytest.mark.skipif(not _kipy_flips(),
+                                reason="this kicad-python cannot flip a part to the bottom")
+
 FOOTPRINT = """(footprint "C_{name}"
   (version 20260206) (generator "kicad-footprint-generator")
   (layer "F.Cu")
@@ -150,6 +159,7 @@ def _installer(snap, result, version=(10, 0, 6)):
     return install.Installer(FakeKiCad(version), b, snap, result, rules=BoardRules()), b
 
 
+@needs_flip
 def test_add_all_places_the_cap_with_a_via_to_each_plane(library, drc_runs):
     snap, r = _split_board()
     (cap,) = r.caps
@@ -181,6 +191,7 @@ def test_add_all_places_the_cap_with_a_via_to_each_plane(library, drc_runs):
         assert abs(v.position.y / 1e6 - 5.0) - 0.3 - 0.075 >= 0.2 - 1e-6
 
 
+@needs_flip
 def test_parts_that_fail_drc_come_off_again(library, drc_runs):
     snap, r = _split_board()
     inst, b = _installer(snap, r)
@@ -193,6 +204,7 @@ def test_parts_that_fail_drc_come_off_again(library, drc_runs):
     assert not b.items and b.commits[-1] == "CapScan: remove parts that failed DRC"
 
 
+@needs_flip
 def test_violations_already_there_do_not_count(library, drc_runs):
     snap, r = _split_board()
     inst, b = _installer(snap, r)
@@ -209,6 +221,16 @@ def test_no_flip_before_kicad_10_0_6(library, drc_runs):
     assert b.commits == ["dropped"]
 
 
+def test_no_flip_with_a_kicad_python_that_cannot_ask(library, drc_runs, monkeypatch):
+    from kipy.proto.board import board_commands_pb2
+    monkeypatch.delattr(board_commands_pb2, "BoardFlipDirection", raising=False)
+    snap, r = _split_board()
+    inst, b = _installer(snap, r)                       # KiCad 10.0.6 could flip it
+    report = inst.add_all(inst.defaults())
+    assert "flip" in report.skipped[0].reason and not b.items
+
+
+@needs_flip
 def test_first_reference_is_the_users(library, drc_runs):
     snap, r = _split_board()
     inst, b = _installer(snap, r)
@@ -218,6 +240,7 @@ def test_first_reference_is_the_users(library, drc_runs):
     assert inst.add_all(opts).added[0].references == ["C101"]   # C100 is on the board
 
 
+@needs_flip
 def test_step_through_shows_each_part_in_kicad(library, drc_runs):
     snap, r = _split_board()
     inst, b = _installer(snap, r)
@@ -229,6 +252,7 @@ def test_step_through_shows_each_part_in_kicad(library, drc_runs):
     assert not b.items
 
 
+@needs_flip
 def test_step_through_runs_drc_once_before_and_once_after(library, drc_runs):
     snap, r = _split_board()
     inst, b = _installer(snap, r)
@@ -376,6 +400,7 @@ def test_library_footprint_is_built_moved_and_turned():
     assert shapes == ["polygon"]                                   # a turned rectangle
 
 
+@needs_flip
 def test_a_cap_footprint_on_the_board_is_copied(library, drc_runs):
     """A board 0402 standing at 90 degrees, copied into the cap lying across the split."""
     from boards import two_pad_part

@@ -475,6 +475,10 @@ class Installer:
 
     def _can_flip(self) -> bool:
         try:
+            from kipy.proto.board.board_commands_pb2 import BoardFlipDirection  # noqa: F401
+        except ImportError:     # kicad-python before 0.8 cannot ask for a flip
+            return False
+        try:
             v = self.kicad.get_version()
             return (int(v.major), int(v.minor), int(v.patch)) >= (10, 0, 6)
         except Exception:  # noqa: BLE001
