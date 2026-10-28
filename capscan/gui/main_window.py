@@ -116,9 +116,11 @@ TIPS = {
     "edge_rate_ps": ("10-90 % edge rate of a net not given its own in the net list. Faster "
                      "edges need a cap with less inductance: a smaller package, or several "
                      "in parallel.", "edge_rate", "tr"),
-    "trace_impedance_ohm": ("Single-ended impedance of a trace not given its own in the net "
-                            "list (half a differential pair's). The lower it is, the more the "
-                            "cap's inductance slows the edge.", "edge_rate", "slow"),
+    "trace_impedance_ohm": ("Characteristic impedance of a trace not given its own in the "
+                            "net list, single-ended (half a differential pair's): set by its "
+                            "width, its height over the plane and the dielectric. The lower "
+                            "it is, the more the cap's inductance slows the edge.",
+                            "impedance", "z0"),
     "max_cap_distance_mm": ("Furthest a stitching cap may be from where the trace crosses "
                             "the split.", "split_crossing", "dist"),
     "via_cap_distance_mm": ("Furthest a stitching cap may be from a via that changes onto "

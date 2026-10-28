@@ -22,6 +22,16 @@ DEFAULT_COLOR = QColor("#888888")
 NET, EDGE, Z0 = 0, 1, 2
 OWN = Qt.UserRole + 1       # a speed cell holds a value set for this net, not the default
 
+EDGE_TEXT = ("10-90 % edge rate of the signal. Faster edges need a stitching cap with less "
+             "inductance: a smaller package, or several in parallel.")
+Z0_TEXT = ("Characteristic impedance of the trace, single-ended (half a differential pair's): "
+           "what an edge travelling down it sees, set by the trace's width, its height over "
+           "the plane and the dielectric. The lower it is, the more a cap's inductance slows "
+           "the edge.")
+CELL_TEXT = ("Grey: the default. Double-click to set it for this net; clear the cell to go "
+             "back to the default.")
+SPIN_TEXT = "'Set shown' gives it to every net the filter shows."
+
 
 def matches_filter(net: str, text: str) -> bool:
     """A filter with * ? or [ is a pattern; anything else matches anywhere in the name.
@@ -63,12 +73,11 @@ class NetPicker(QWidget):
         layout.addWidget(self.filter)
         self.list = QTableWidget(0, 3)
         self.list.setHorizontalHeaderLabels(["Net", "Edge ps", "Z0 Ω"])
-        self.list.horizontalHeaderItem(EDGE).setToolTip(art_tip(
-            "10-90 % edge rate of the signal. Grey: the default edge rate. Double-click to "
-            "set; clear the cell to go back to the default.", "edge_rate", "tr"))
-        self.list.horizontalHeaderItem(Z0).setToolTip(
-            "Single-ended impedance of the trace (half a differential pair's). Grey: the "
-            "default. Double-click to set; clear the cell to go back to the default.")
+        self._cell_tips = {
+            EDGE: art_tip(f"{EDGE_TEXT} {CELL_TEXT}", "edge_rate", "tr"),
+            Z0: art_tip(f"{Z0_TEXT} {CELL_TEXT}", "impedance", "z0")}
+        for col, tip in self._cell_tips.items():
+            self.list.horizontalHeaderItem(col).setToolTip(tip)
         self.list.verticalHeader().setVisible(False)
         self.list.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.list.setEditTriggers(QAbstractItemView.DoubleClicked
@@ -91,6 +100,8 @@ class NetPicker(QWidget):
         speed = QHBoxLayout()
         self.edge_spin = _spin(" ps", 1, 100000, self._defaults[0])
         self.z0_spin = _spin(" Ω", 1, 500, self._defaults[1])
+        self.edge_spin.setToolTip(art_tip(f"{EDGE_TEXT} {SPIN_TEXT}", "edge_rate", "tr"))
+        self.z0_spin.setToolTip(art_tip(f"{Z0_TEXT} {SPIN_TEXT}", "impedance", "z0"))
         self.set_speed = QPushButton("Set shown")
         self.set_speed.setToolTip("Give every net shown this edge rate and impedance")
         self.set_speed.clicked.connect(self._set_shown_speed)
@@ -126,7 +137,9 @@ class NetPicker(QWidget):
             it.setCheckState(Qt.Checked if n in keep else Qt.Unchecked)
             self.list.setItem(r, NET, it)
             for col, own in ((EDGE, edge), (Z0, z)):
-                self.list.setItem(r, col, QTableWidgetItem())
+                cell = QTableWidgetItem()
+                cell.setToolTip(self._cell_tips[col])
+                self.list.setItem(r, col, cell)
                 self._show_speed(r, col, own.get(n))
         self.list.blockSignals(False)
         self._apply_filter()

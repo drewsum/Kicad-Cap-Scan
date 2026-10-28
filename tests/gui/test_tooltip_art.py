@@ -30,7 +30,7 @@ def fresh(monkeypatch, tmp_path):
 def test_the_graphics_folder_holds_the_drawings():
     assert ta.GRAPHICS.is_dir()
     assert {"split_crossing", "via_transition", "void", "edge_rate", "decoupling",
-            "supply_detect", "derating"} <= set(ta.names())
+            "supply_detect", "derating", "impedance"} <= set(ta.names())
 
 
 @pytest.mark.parametrize("name", ta.names())
@@ -118,3 +118,19 @@ def test_every_drawing_shows_in_a_tooltip(panel):
     tips += [table.horizontalHeaderItem(i).toolTip() for i in range(table.columnCount())]
     for name in ta.names():
         assert f"/{name}-" in " ".join(tips), name
+
+
+def test_the_per_net_speed_fields_have_tooltips(panel):
+    """The net list's edge rate and impedance: their headers, each net's cells and the
+    boxes 'Set shown' takes them from, the impedance with what Z0 is."""
+    from capscan.gui.net_picker import EDGE, Z0
+    nets = panel.nets
+    nets.set_nets(["CLK", "D0"])
+    for col, drawing, box in ((EDGE, "edge_rate", nets.edge_spin),
+                              (Z0, "impedance", nets.z0_spin)):
+        head = nets.list.horizontalHeaderItem(col).toolTip()
+        assert f"/{drawing}-" in head
+        for r in range(nets.list.rowCount()):
+            assert nets.list.item(r, col).toolTip() == head
+        assert f"/{drawing}-" in box.toolTip() and "Set shown" in box.toolTip()
+    assert "Characteristic impedance" in nets.z0_spin.toolTip()

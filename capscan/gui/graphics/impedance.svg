@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="178" viewBox="0 0 280 178">
+  <rect x="0" y="0" width="280" height="178" rx="8" fill="{bg}"/>
+  <g font-family="sans-serif" font-size="11">
+    <!-- left: a cross-section, the trace over its plane -->
+    <rect x="20" y="78" width="126" height="40" fill="{grid}"/>
+    <path d="M20,121 H146" stroke="{muted}" stroke-width="6" fill="none"/>
+    <rect x="66" y="70" width="30" height="8" fill="{fg}"/>
+    <path d="M66,76 Q44,96 38,118 M96,76 Q118,96 124,118 M74,78 Q72,100 70,118 M88,78 Q90,100 92,118" stroke="{muted}" stroke-width="1" stroke-dasharray="3 2" fill="none"/>
+    <text x="26" y="112" fill="{muted}" font-size="10">εr</text>
+    <path d="M66,52 V64 M96,52 V64 M68,58 H94" stroke="{geo}" stroke-width="1.2" fill="none"/>
+    <text x="81" y="48" fill="{geo}" text-anchor="middle" font-size="10">W</text>
+    <path d="M134,78 H142 M134,118 H142 M138,80 V116" stroke="{geo}" stroke-width="1.2" fill="none"/>
+    <text x="130" y="102" fill="{geo}" text-anchor="end" font-size="10">H</text>
+    <text x="83" y="144" fill="{muted}" text-anchor="middle" font-size="10">W, H and εr set</text>
+    <text x="83" y="158" fill="{muted}" text-anchor="middle" font-size="10">L and C per length</text>
+    <path d="M156,16 V162" stroke="{grid}" stroke-width="1.2" fill="none"/>
+    <!-- right: what the trace and plane are to an edge: a ladder of L and C -->
+    <path d="M166,60 H172 a6,6 0 0 1 12,0 a6,6 0 0 1 12,0 H204 a6,6 0 0 1 12,0 a6,6 0 0 1 12,0 H248" stroke="{lc}" stroke-width="1.8" fill="none"/>
+    <path d="M196,60 V84 M188,84 H204 M188,91 H204 M196,91 V118 M240,60 V84 M232,84 H248 M232,91 H248 M240,91 V118" stroke="{lc}" stroke-width="1.8" fill="none"/>
+    <path d="M166,118 H256" stroke="{muted}" stroke-width="1.4" fill="none"/>
+    <text x="260" y="64" fill="{muted}" font-size="10">…</text>
+    <text x="184" y="48" fill="{lc}" text-anchor="middle">L</text>
+    <text x="216" y="48" fill="{lc}" text-anchor="middle">L</text>
+    <text x="180" y="92" fill="{lc}" text-anchor="end">C</text>
+    <text x="224" y="92" fill="{lc}" text-anchor="end">C</text>
+    <text x="214" y="146" fill="{z0}" text-anchor="middle" font-size="13">Z0 = √(L / C)</text>
+    <text x="214" y="164" fill="{muted}" text-anchor="middle" font-size="10">the edge sees this</text>
+  </g>
+</svg>
