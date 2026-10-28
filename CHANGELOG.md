@@ -8,6 +8,11 @@ a release renames that heading to its version and date.
 ## [Unreleased]
 
 ### Added
+- *Add to board…* puts the stitching capacitors on the board in KiCad, each pad with a via
+  to its plane, and adds the return vias. The footprint, via size and type, and the first
+  reference designator are picked from the board and can be changed; vias keep the
+  project's design rules, and DRC must find the board as it was before. Add them all in one
+  undo step, or step through them in KiCad one at a time (#6).
 - A changelog (#11).
 - The HTML report counts the decoupling capacitors it found (#8).
 - A fuller About dialog: what CapScan does, links to the user guide, research notes,

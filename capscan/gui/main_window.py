@@ -51,6 +51,7 @@ LOG_COLORS = {logging.WARNING: "#ffc060", logging.ERROR: "#ff8080"}
 SETTINGS_KEY = "scan_settings"
 NETS_KEY = "nets/"              # + board file name: the nets picked for that board
 SPEEDS_KEY = "speeds/"          # + board file name: edge rates and impedances set per net
+FIRST_REF_KEY = "first_ref/"    # + board file name: the first reference of the caps added
 
 
 class _Item(QTableWidgetItem):
@@ -231,6 +232,8 @@ class MainWindow(QMainWindow):
         self._task: Optional[Task] = None
         self._data: Optional[MapData] = None
         self._preview: Optional[ScanResult] = None     # the board as read, before a scan
+        self._installed: dict = {}      # cap or via id -> what became of it on the board
+        self._steps: Optional[dict] = None
         self.setWindowTitle(f"CapScan {__version__}: stitching capacitor advisor")
         self.resize(1500, 950)
         self._qsettings = QSettings("CapScan", "CapScan")
@@ -376,6 +379,9 @@ class MainWindow(QMainWindow):
                                "(one undo step in KiCad)")
         self.act_clear = act("Clear markers", self.clear_markers,
                              "Remove the markers CapScan drew")
+        self.act_add = act("Add to board…", self.add_to_board,
+                           "Add the stitching capacitors, their vias and the return vias to "
+                           "the board in KiCad, keeping to the design rules (DRC checked)")
         tb.addSeparator()
         self.act_html = act("Export HTML…", self.export_html)
         self.act_pdf = act("Export PDF…", self.export_pdf)
@@ -398,6 +404,8 @@ class MainWindow(QMainWindow):
             a.setEnabled(has and not running)
         self.act_markers.setEnabled(has and live and not running)
         self.act_clear.setEnabled(live and not running)
+        self.act_add.setEnabled(has and live and not running and self._steps is None
+                                and bool(self.result.caps or self.result.stitch_vias))
 
     # ------------------------------------------------------------------ settings
     def _restore_settings(self):
@@ -590,6 +598,8 @@ class MainWindow(QMainWindow):
             self._preview_timer.start()     # redrawn once the clicking stops
 
     def _show_result(self, snap: BoardSnapshot, r: ScanResult):
+        if r is not self.result:
+            self._installed = {}
         self.snapshot, self.result = snap, r
         self._data = MapData(snap, r)
         self._show_board(snap, r)
@@ -683,11 +693,13 @@ class MainWindow(QMainWindow):
         from capscan.report import html as rep
         fill_table(self.caps_table,
                    ["Cap", "Qty", "Value", "Dielectric", "Package", "Rating", "Net A", "Net B",
-                    "X", "Y", "Side", "Angle", "Planes on", "Signals", "Signal nets", "Note"],
+                    "X", "Y", "Side", "Angle", "Planes on", "Signals", "Signal nets", "Note",
+                    "On board"],
                    [(c.id, c.count, c.value, c.dielectric, c.package, f"{c.voltage_v:g} V", c.net_a,
                      c.net_b, c.position[0], c.position[1], c.side, c.angle_deg,
                      ", ".join(r.layer_name(l) for l in c.ref_layers), len(c.signals),
-                     ", ".join(c.signals), c.note) for c in r.caps],
+                     ", ".join(c.signals), c.note, self._installed.get(c.id, ""))
+                    for c in r.caps],
                    ids=[c.id for c in r.caps])
         fill_table(self.signals_table,
                    rep.SIGNAL_HEAD, list(rep._signal_rows(r)))
@@ -775,6 +787,154 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "CapScan", f"Could not clear the markers: {e}")
             return
         self._log(f"Removed {n} marker items.")
+
+    # ------------------------------------------------------------------ adding to the board
+    def add_to_board(self):
+        from qtpy.QtWidgets import QApplication, QDialog
+
+        from capscan.gui.add_dialog import ADD_ALL, AddDialog
+        from capscan.kicad.install import Installer
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            inst = Installer(self.kicad, self.board, self.snapshot, self.result)
+            dlg = AddDialog(inst, self, self._next_first_ref(inst))
+        except Exception as e:  # noqa: BLE001
+            log.exception("Add to board")
+            QMessageBox.warning(self, "CapScan", f"Could not get ready to add parts: {e}")
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        if dlg.exec() != QDialog.Accepted:
+            return
+        opts = dlg.options()
+        self._qsettings.setValue(FIRST_REF_KEY + self._board_name(),
+                                 f"{opts.prefix}{opts.start}")
+        if dlg.mode == ADD_ALL:
+            self._run(lambda p: self._with(inst, p).add_all(opts), self._added)
+        else:
+            self._start_steps(inst, opts)
+
+    def _next_first_ref(self, inst) -> str:
+        """The first reference given last time for this board, moved past what is on the
+        board now (so adding again carries on the numbering); "" for none."""
+        from capscan.analysis.install import next_references, split_reference
+        split = split_reference(str(self._qsettings.value(FIRST_REF_KEY + self._board_name(),
+                                                          "") or ""))
+        if split is None:
+            return ""
+        return next_references(inst.taken, split[0], split[1], 1)[0]
+
+    @staticmethod
+    def _with(inst, progress):
+        inst.progress = progress
+        return inst
+
+    def _record(self, out) -> None:
+        from capscan.kicad.install import Added
+        if isinstance(out, Added):
+            self._installed[out.ident] = ", ".join(out.references) or "added"
+        else:
+            self._installed[out.ident] = f"not added: {out.reason}"
+
+    def _added(self, report):
+        for out in report.added + report.skipped:
+            self._record(out)
+        for line in report.lines():
+            self._log(line, logging.WARNING if "not added" in line or line.startswith(" ")
+                      else logging.INFO)
+        self._log(f"Added {len(report.added)}, not added {len(report.skipped)}; DRC finds "
+                  "nothing new. Scan again to check the board with them.")
+        self._fill_tables(self.result)
+        QMessageBox.information(
+            self, "CapScan", f"{len(report.added)} added, {len(report.skipped)} not added "
+            "(the log says why). Undo in KiCad takes the added ones off.")
+
+    def _start_steps(self, inst, opts):
+        from capscan.gui.add_dialog import StepPanel
+        queue = [c.id for c in self.result.caps] + [v.id for v in self.result.stitch_vias]
+        panel = StepPanel(self)
+        self._steps = {"inst": inst, "opts": opts, "queue": queue, "total": len(queue),
+                       "index": 0, "current": None, "kept": [], "panel": panel}
+        panel.keep.connect(self._step_next)
+        panel.take_off.connect(self._step_take_off)
+        panel.rest.connect(self._step_rest)
+        panel.stop.connect(self._step_stop)
+        panel.show()
+        panel.busy("Running DRC before adding…")
+        self._run(lambda p: self._with(inst, p).begin_steps(), lambda _: self._step_next())
+
+    def _step_next(self):
+        s = self._steps
+        if s is None:
+            return
+        if not s["queue"]:
+            self._step_stop()
+            return
+        ident = s["queue"].pop(0)
+        s["index"] += 1
+        s["panel"].busy(f"Adding {ident}…")
+        inst, opts = s["inst"], s["opts"]
+        self._run(lambda p: self._with(inst, p).add_one(ident, opts), self._step_shown)
+
+    def _step_shown(self, out):
+        from capscan.gui.add_dialog import describe
+        from capscan.kicad.install import Added
+        s = self._steps
+        if s is None:
+            return
+        self._record(out)
+        self._fill_tables(self.result)
+        text = describe(self.result, out.ident)
+        if isinstance(out, Added):
+            s["current"] = out
+            s["kept"].append(out)
+            refs = ", ".join(out.references)
+            s["panel"].show_added(s["index"], s["total"], out.ident,
+                                  (f"As {refs}: " if refs else "") + text
+                                  + "".join(f"<br>{n}" for n in out.notes))
+        else:
+            s["current"] = None
+            s["panel"].show_skipped(s["index"], s["total"], out.ident,
+                                    f"{text}<br>{out.reason}"
+                                    + "".join(f"<br>{v}" for v in out.violations[:5]))
+
+    def _step_take_off(self):
+        s = self._steps
+        if s is None or s["current"] is None:
+            self._step_next()
+            return
+        out, inst = s["current"], s["inst"]
+        s["panel"].busy(f"Taking {out.ident} off…")
+        s["kept"].remove(out)
+        self._installed[out.ident] = "taken off"
+        self._run(lambda p: self._with(inst, p).remove([out], f"CapScan: take {out.ident} off"),
+                  lambda _: self._step_next())
+
+    def _step_rest(self):
+        """Add what is left in one go; DRC then checks it with the parts kept so far."""
+        s, self._steps = self._steps, None
+        if s is None:
+            return
+        s["panel"].close()
+        inst, opts, left = s["inst"], s["opts"], set(s["queue"])
+        caps = [c for c in self.result.caps if c.id in left]
+        vias = [v for v in self.result.stitch_vias if v.id in left]
+        self._run(lambda p: self._with(inst, p).add_all(opts, caps, vias, kept=s["kept"]),
+                  self._added)
+
+    def _step_stop(self):
+        """End a step-through: DRC checks the parts kept (once, not after each)."""
+        s, self._steps = self._steps, None
+        if s is not None:
+            s["panel"].close()
+            inst, opts, kept = s["inst"], s["opts"], s["kept"]
+            if kept:
+                self._log(f"Step through ended with {len(kept)} kept; running DRC on them.")
+                self._run(lambda p: self._with(inst, p).finish_steps(opts, kept),
+                          self._added)
+            else:
+                self._log("Step through ended: nothing added.")
+        self._update_actions()
 
     def _default_path(self, suffix: str) -> str:
         snap = self.snapshot

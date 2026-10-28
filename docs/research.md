@@ -144,8 +144,29 @@ vias still shows where they cluster.
   interface's edge rate and topology.
 * It does not check traces running parallel to a split edge, or the plane-to-plane
   capacitance a stackup provides.
-* It does not place footprints. Markers on User.Comments show the spots; add the parts in
-  the schematic.
+* It does not add the parts to the schematic. *Add to board* puts them on the board as
+  ordinary footprints, and they are added to the schematic by hand.
+
+## Adding the parts
+
+* **Rules.** KiCad's API does not give the design rules, so they come from the project
+  file: the netclass clearances, the minimum via size, drill and annular ring, hole-to-hole
+  and copper-to-edge, and the predefined via sizes. Without a project file KiCad's defaults
+  are assumed. Custom rules with a condition are left to DRC.
+* **Via types.** KiCad 6 had switches allowing blind/buried vias and microvias; KiCad 7 on
+  allow every type in the rules and leave it to the fab. So a type is offered only when the
+  board already uses it, which shows the process makes it, and no custom rule disallows it.
+  The shortest allowed via is used: a microvia joins two neighbouring layers, one of them
+  outer; a blind via starts on an outer layer; a buried via has neither end outside.
+* **Vias beside the pads.** One via per pad, straight out from the far end of the pad
+  first, then turned to its sides, 0.1 mm steps up to 1.5 mm away. The via keeps its
+  netclass clearance from every other net's track, pad and via on every layer it passes
+  through; zones refill round it. The track to it is 1.5 times the default track width, at
+  most the pad's width.
+* **DRC.** `kicad-cli pcb drc --refill-zones` on the board as it is in the editor, before
+  and after. A violation is the same one when its type and the items it names are (the
+  measured value may differ). Anything a new violation names is taken off; if a new
+  violation names none of the added parts, they all come off.
 
 ## Sources
 

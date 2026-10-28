@@ -232,3 +232,114 @@ def test_bring_to_front_restores_and_forces_the_foreground(app, make_window, mon
     capscan_app.bring_to_front(w)
     assert w.isVisible() and not w.isMinimized()
     assert calls == [int(w.winId())]
+
+
+def test_add_to_board_needs_a_live_board(app, make_window):
+    w = make_window()
+    w.settings_panel.nets.set_scan_all(True)
+    _scan(app, w)
+    assert w.result.caps and not w.act_add.isEnabled()      # a board file, not KiCad
+    assert w.caps_table.horizontalHeaderItem(w.caps_table.columnCount() - 1).text() \
+        == "On board"
+
+
+def test_add_dialog_takes_the_first_reference(app):
+    from types import SimpleNamespace
+
+    from capscan.analysis.install import BoardRules, ViaSize
+    from capscan.gui.add_dialog import AddDialog
+    from capscan.kicad.install import AddOptions
+    from boards import scan
+
+    r = scan(board(tracks=[track("D0", B_CU, (12.0, 5.0), (28.0, 5.0))]))
+    src = SimpleNamespace(label="Capacitor_SMD:C_0402_1005Metric (KiCad library)")
+    inst = SimpleNamespace(
+        result=r, cli="kicad-cli", rules=BoardRules(), allowed=["through", "micro"],
+        taken={"C100"}, sources=lambda p: [src], via_sizes=lambda: [ViaSize(0.6, 0.3)],
+        defaults=lambda: AddOptions({}, ViaSize(0.6, 0.3), ["through", "micro"], "C", 7))
+    d = AddDialog(inst)
+    assert d.first_ref.text() == "C7" and d.add_all.isEnabled()
+    d.first_ref.setText("C100")
+    assert d.ref_hint.text() == "C101"                       # C100 is on the board
+    opts = d.options()
+    assert (opts.prefix, opts.start, opts.footprints["0402"]) == ("C", 100, src)
+    assert opts.via_types == ["through", "micro"]
+    d.type_boxes["micro"].setChecked(False)
+    assert d.options().via_types == ["through"]
+    d.first_ref.setText("100")
+    assert not d.add_all.isEnabled() and not d.step.isEnabled()
+    assert AddDialog(inst, first_reference="CS4").first_ref.text() == "CS4"
+
+
+def test_step_through_names_the_signal_each_part_is_for(app):
+    from capscan.gui.add_dialog import describe
+    from boards import scan
+
+    r = scan(board(tracks=[track("D0", B_CU, (12.0, 5.0), (28.0, 5.0))]))
+    (cap,) = r.caps
+    text = describe(r, cap.id)
+    assert "For: <b>D0</b> (crosses the split on In2.Cu)" in text
+
+
+@pytest.mark.parametrize("mode", ["all", "step"])
+def test_add_to_board_flow(app, make_window, monkeypatch, mode):
+    from qtpy.QtWidgets import QDialog, QMessageBox
+
+    from capscan.gui import add_dialog
+    from capscan.kicad import install
+
+    calls = []
+
+    class Inst:
+        def __init__(self, kicad, board, snap, result):
+            self.taken, self.progress = set(), None
+
+        def add_all(self, opts, caps=None, vias=None):
+            calls.append(("all", [c.id for c in caps] if caps is not None else None))
+            return install.AddReport(added=[install.Added("CS1", ["C1"])])
+
+        def begin_steps(self):
+            calls.append("begin")
+
+        def add_one(self, ident, opts):
+            calls.append(("one", ident))
+            return install.Added(ident, ["C9"])
+
+        def finish_steps(self, opts, kept):
+            calls.append(("finish", [a.ident for a in kept]))
+            return install.AddReport(added=list(kept))
+
+    class Dialog:
+        def __init__(self, inst, parent=None, first_reference=""):
+            self.mode = mode
+
+        def exec(self):
+            return QDialog.Accepted
+
+        def options(self):
+            return install.AddOptions({}, None, [], "C", 9)
+
+    monkeypatch.setattr(install, "Installer", Inst)
+    monkeypatch.setattr(add_dialog, "AddDialog", Dialog)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    w = make_window()
+    w.settings_panel.nets.set_scan_all(True)
+    _scan(app, w)
+    w.board = object()
+    w._update_actions()
+    assert w.act_add.isEnabled()
+    w.add_to_board()
+    if mode == "all":
+        _wait(app, lambda: w._installed.get("CS1") == "C1" and not w._task.isRunning())
+        assert calls == [("all", None)]
+    else:
+        _wait(app, lambda: w._installed.get("CS1") == "C9" and not w._task.isRunning())
+        assert calls == ["begin", ("one", "CS1")]
+        assert w._steps["panel"].title.text().startswith("1 of")
+        w._steps["panel"].stop.emit()
+        assert w._steps is None
+        _wait(app, lambda: not w._task.isRunning() and w.act_add.isEnabled())
+        assert calls[-1] == ("finish", ["CS1"])                 # DRC once, at the end
+    col = w.caps_table.columnCount() - 1
+    assert w.caps_table.item(0, col).text() in ("C1", "C9")
+    w.board = None

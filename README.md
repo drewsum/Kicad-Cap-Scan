@@ -48,6 +48,13 @@ counted as a stitching capacitor.
   * Crossings, via transitions, and the existing capacitor audit.
 * **Markers on the board**: *Place markers* draws each capacitor, return via and void on
   User.Comments in one undo step. *Clear markers* removes them again.
+* **Adding the parts**: *Add to board…* puts the capacitors on the board in KiCad, each pad
+  with a via to its plane, and adds the return vias. It picks the footprint (one the board
+  already uses for that package, else KiCad's library one), the via size and type, and the
+  first reference designator, and any of them can be changed. DRC runs before and after,
+  and anything that breaks it is taken off again. *Add all* is one undo step; *Step
+  through* shows each part in KiCad and asks to keep it. The parts are ordinary footprints:
+  add them to the schematic.
 * **Reports**: one self-contained HTML file with an interactive 3D view, or a PDF with the 3D
   view attached and a fillable notes box.
 
@@ -102,6 +109,27 @@ Double-click any row to find it on the map and select that net in KiCad.
 2. Read the summary on the left. The **Stitching Caps** tab is the list of parts to add.
 3. Click **Place markers** to see the spots in the PCB editor, then **Export PDF** or
    **Export HTML** for the report.
+4. Or click **Add to board…** to put the parts and vias on the board (see
+   [Adding the parts](#adding-the-parts)), then add the capacitors to the schematic under
+   the references they were given.
+
+### Adding the parts
+
+* **Footprint**: for each package, the capacitor footprint the board already uses most,
+  else KiCad's `Capacitor_SMD` one; *Browse…* takes any `.kicad_mod` file.
+* **Vias**: the size most used on the plane nets, from the board's predefined sizes and net
+  classes. KiCad 9 and 10 have no switch for blind, buried or microvias, so CapScan offers
+  each type only if the board already uses it and the custom rules do not disallow it; a
+  microvia when the plane is next to the cap's side, else a blind via, else a through via.
+* **References**: the first stitching cap's reference, `C` and the next free number unless
+  set (say `C500`); the rest count up from it, skipping any already on the board.
+* **Design rules** are read from the project (`.kicad_pro`, `.kicad_dru`): close Board
+  Setup with OK first. A via only goes where it keeps the clearance from every other net's
+  copper on every layer it passes through. DRC (`kicad-cli`, on a copy of the board as it is
+  in the editor) runs before and after; whatever a new violation names is taken off. A
+  step-through runs it once before the first part and once after the last, not per part.
+* A cap on the bottom needs KiCad 10.0.6 or later (to flip it), unless the board already
+  has a bottom-side footprint to copy.
 
 Each kind of break has its own switch at the top of the *Scan* panel. For example, turn
 off *Check vias onto another net's plane* to get capacitors for split crossings only. A
@@ -156,7 +184,7 @@ python -m venv .venv
 
 | Folder | What is in it |
 |---|---|
-| `capscan/kicad/` | Everything that talks to KiCad: extraction (with fallbacks for each KiCad 9 / 10 release) and the markers |
+| `capscan/kicad/` | Everything that talks to KiCad: extraction (with fallbacks for each KiCad 9 / 10 release), the markers, and adding the parts (design rules, footprints, DRC) |
 | `capscan/model/`, `capscan/geometry/` | The board snapshot and its geometry, shared with [KiPI](https://github.com/drewsum/KiPI) |
 | `capscan/analysis/` | The scan: rules, references, crossings, transitions, existing caps, placement, values, heat map |
 | `capscan/report/` | The 2D map, the 3D scene, and the HTML / PDF reports |

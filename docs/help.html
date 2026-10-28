@@ -102,6 +102,24 @@ treat as planes. The reasoning and sources for each default are in
 </ul>
 <p><b>Clear markers</b> removes only what CapScan drew.</p>
 
+<h2>Adding the parts</h2>
+<p><b>Add to board…</b> puts the stitching capacitors on the board, each pad with a via to
+its plane and a short track to it, and adds the return vias. The dialog shows what it
+picked and lets each be changed:</p>
+<ul>
+  <li><b>Footprint</b> for each package: the one the board already uses most, else KiCad's
+    <code>Capacitor_SMD</code> one, or any <code>.kicad_mod</code> file.</li>
+  <li><b>Via size</b>, from the board's predefined sizes and net classes, and the <b>via
+    types</b> the board already uses (through vias otherwise).</li>
+  <li><b>First stitching cap</b>: its reference (say <code>C500</code>); the rest count
+    up, skipping references already on the board.</li>
+</ul>
+<p>DRC runs before and after; anything that breaks it is taken off again. <b>Add all</b> is
+one undo step in KiCad. <b>Step through</b> adds one part at a time, selects it in KiCad, names the
+signal nets it gives a return path and where each one's path breaks, and asks to keep it or take it off; DRC runs once before the first and once after the last, on
+all the parts kept. The parts are ordinary footprints: add them to the schematic
+under the references they were given.</p>
+
 <h2>When something is wrong</h2>
 <ul>
   <li><b>"Could not connect to KiCad"</b>: check <i>Preferences → Plugins → Enable KiCad
