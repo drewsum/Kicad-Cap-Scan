@@ -1,17 +1,17 @@
 {
   "schema": 1,
-  "updated": "2026-11-02T11:07:09Z",
+  "updated": "2026-11-03T10:53:10Z",
   "clones": {
     "total": 0,
-    "since": "2026-11-02",
+    "since": "2026-11-03",
     "uniques_14d": 0,
     "daily": {}
   },
   "release_downloads": {
-    "total": 0,
+    "total": 2,
     "by_release": {
-      "v0.2.0": 0,
-      "v0.1.0": 0
+      "v0.2.0": 1,
+      "v0.1.0": 1
     }
   }
 }
